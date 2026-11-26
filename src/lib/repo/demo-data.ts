@@ -78,6 +78,7 @@ export function demoProspects(): Omit<Prospect, "id">[] {
     score: r[21], est_amount_cents: r[16], highlights: r[17], ig_activity: r[18], is_independent: true,
     next_action_label: r[19], next_action_at: r[20] == null ? null : day(r[20]),
     do_not_contact: false, lost_reason: r[0] === "Les Frères Vallée (rap)" ? "Budget trop serré pour cette année" : null,
+    contact_role: null, activity: null, ai_description: null, ai_swot: null, ai_analyzed_at: null,
     archived_at: null, created_at: ago(30 - i), updated_at: ago(30 - i), tag_ids: r[22],
   }));
 }

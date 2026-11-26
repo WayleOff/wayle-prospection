@@ -4,7 +4,9 @@ import { AlertTriangle, FileUp } from "lucide-react";
 import { useApp } from "./app-provider";
 import { Button, CloseButton, Dialog, inputCls } from "./ui";
 import { decodeText, parseCsv } from "@/lib/csv";
-import { IMPORT_FIELDS, buildRows, guessMapping, type ImportFieldKey, type ImportOrigin, type Mapping } from "@/lib/import";
+import { normText } from "@/lib/normalize";
+import { ProspectSqlNotice } from "./sql-notice";
+import { IMPORT_FIELDS, MULTI_FIELDS, buildRows, guessMapping, type ImportFieldKey, type ImportOrigin, type Mapping } from "@/lib/import";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_ROWS = 5000;
@@ -28,7 +30,7 @@ async function csvFromZip(bytes: Uint8Array): Promise<Uint8Array | null> {
 }
 
 function ImportForm({ onClose }: { onClose: () => void }) {
-  const { ref, prospects, importProspects } = useApp();
+  const { ref, prospects, importProspects, prospectExtras } = useApp();
   const [origin, setOrigin] = useState<ImportOrigin>("csv");
   const [fileName, setFileName] = useState("");
   const [table, setTable] = useState<string[][] | null>(null);
@@ -67,12 +69,17 @@ function ImportForm({ onClose }: { onClose: () => void }) {
     setForced(new Set());
     setMapping((m) => {
       const next = { ...m };
-      if (key) for (const k of Object.keys(next)) if (next[Number(k)] === key) next[Number(k)] = ""; // un champ = une colonne
+      if (key && !MULTI_FIELDS.includes(key)) for (const k of Object.keys(next)) if (next[Number(k)] === key) next[Number(k)] = ""; // un champ = une colonne (sauf « notes »)
       next[col] = key;
       return next;
     });
   };
 
+  // Colonnes qui contiennent des données mais ne seront pas importées : on ne les perd pas en silence.
+  const TECHNICAL = /^(created time|last edited time|created by|last edited by|date de creation|derniere modification|cree par|modifie par)$/i;
+  const dropped = table ? table[0].map((h, i) => ({ h: h.trim() || `Colonne ${i + 1}`, i })).filter(({ h, i }) => !mapping[i] && !TECHNICAL.test(normText(h) ?? "") && table.slice(1).some((r) => (r[i] ?? "").trim() !== "")) : [];
+  const keepAsNotes = () => setMapping((m) => { const next = { ...m }; for (const d of dropped) next[d.i] = "extra"; return next; });
+  const usesExtras = Object.values(mapping).some((k) => k === "contact_role" || k === "activity");
   const hasName = Object.values(mapping).some((k) => k === "name" || k === "instagram");
   const rows = useMemo(
     () => (table && hasName ? buildRows(table, mapping, { origin, categories: ref.categories, tags: ref.tags, stages: ref.stages, existing: prospects, defaultCategoryId: categoryId || null, stageId }) : []),
@@ -142,6 +149,14 @@ function ImportForm({ onClose }: { onClose: () => void }) {
                   </li>
                 ))}
               </ul>
+              {dropped.length > 0 ? (
+                <div role="note" className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                  <p className="flex items-center gap-1.5 font-medium"><AlertTriangle size={15} aria-hidden /> {dropped.length} colonne{dropped.length > 1 ? "s" : ""} avec des données ne seront pas importée{dropped.length > 1 ? "s" : ""}</p>
+                  <p className="mt-1 text-xs text-muted">{dropped.map((d) => d.h).join(" · ")}</p>
+                  <Button size="sm" className="mt-2" onClick={keepAsNotes}>Les ajouter aux notes de la fiche</Button>
+                </div>
+              ) : null}
+              {usesExtras && !prospectExtras ? <div className="mt-3"><ProspectSqlNotice what="Le poste du contact et l’activité ne seront pas enregistrés" /></div> : null}
               {!hasName ? <p role="alert" className="mt-2 text-sm text-danger">Choisissez la colonne du nom (ou de l’Instagram) pour continuer.</p> : null}
             </section>
 
@@ -176,7 +191,7 @@ function ImportForm({ onClose }: { onClose: () => void }) {
                     {fresh.slice(0, 5).map((r) => (
                       <li key={r.line} className="flex flex-wrap items-baseline gap-x-2 px-3 py-2">
                         <span className="font-medium">{r.input!.name}</span>
-                        <span className="text-xs text-muted">{[ref.categories.find((c) => c.id === r.input!.category_id)?.name, r.input!.instagram, r.input!.phone, r.input!.email].filter(Boolean).join(" · ")}</span>
+                        <span className="text-xs text-muted">{[ref.categories.find((c) => c.id === r.input!.category_id)?.name, r.input!.contact_first_name ? [r.input!.contact_first_name, r.input!.contact_last_name].filter(Boolean).join(" ") + (r.input!.contact_role ? ` (${r.input!.contact_role})` : "") : r.input!.contact_role, r.input!.instagram, r.input!.phone, r.input!.email, r.input!.address, r.input!.website].filter(Boolean).join(" · ")}</span>
                       </li>
                     ))}
                     {fresh.length > 5 ? <li className="px-3 py-2 text-xs text-muted">… et {fresh.length - 5} autre{fresh.length - 5 > 1 ? "s" : ""}</li> : null}

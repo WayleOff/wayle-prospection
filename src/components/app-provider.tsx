@@ -6,7 +6,7 @@ import { isMessageAction, planAfter, planStart, progressOf, stageStopsSequence, 
 import { RELANCE_DAYS } from "@/lib/message";
 import { fmtMoney, mergeCompany, nextNumber, STATUS_LABEL, totals } from "@/lib/quote";
 import { DEFAULT_SCORE_RULES, SCORE_FIELDS, computeScore, mergeRules } from "@/lib/score";
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Company, Invoice, InvoiceInput, Logo, Offer, OfferInput, Quote, Stage, QuoteInput, QuoteStatus, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
+import type { Activity, ActivityKind, AiSwot, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Company, Invoice, InvoiceInput, Logo, Offer, OfferInput, Quote, Stage, QuoteInput, QuoteStatus, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
 
 export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void; /** Message en train de disparaître (fondu de sortie). */ leaving?: boolean }
 
@@ -26,6 +26,10 @@ interface AppCtx {
   moveStage: (id: string, stageId: string) => Promise<void>;
   setTags: (id: string, tagIds: string[]) => Promise<void>;
   archive: (id: string) => Promise<void>;
+  /** Faux tant que la migration « fiche prospect (IA) » n'est pas appliquée dans Supabase. */
+  prospectExtras: boolean;
+  /** Enregistre la description et le SWOT rédigés par l'IA. */
+  saveAnalysis: (id: string, a: { ai_description: string; ai_swot: AiSwot }) => Promise<boolean>;
   /** Archive plusieurs fiches d'un coup (un seul message, annulable). */
   archiveMany: (ids: string[]) => Promise<void>;
   /** Fiches archivées (chargées à la demande). */
@@ -133,6 +137,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const [scoreRules, setScoreRules] = useState<ScoreRule[]>(DEFAULT_SCORE_RULES);
   const scoreRulesRef = useRef<ScoreRule[]>(DEFAULT_SCORE_RULES);
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [prospectExtras, setProspectExtras] = useState(true);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [quotesReady, setQuotesReady] = useState(false);
   const quotesRef = useRef<Quote[]>([]);
@@ -210,6 +215,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     repo.listOffers().then((o) => { if (alive) setOffers(o); }).catch(() => undefined);
     repo.getSetting<Partial<Company>>("company").then((c) => { if (alive) setCompany(mergeCompany(c)); }).catch(() => undefined);
     repo.getSetting<Partial<Logo>>("logo").then((l) => { if (alive) setLogo(l?.data_url ? (l as Logo) : null); }).catch(() => undefined);
+    repo.hasProspectExtras().then((ok) => { if (alive) setProspectExtras(ok); }).catch(() => undefined);
     repo.listQuotes().then((q) => { if (!alive) return; quotesRef.current = q; setQuotes(q); setQuotesReady(true); }).catch(() => { if (alive) setQuotesReady(false); });
     // Les factures viennent de la migration « acompte et factures » : tant qu'elle manque, l'onglet l'explique.
     repo.listInvoices().then((l) => { if (!alive) return; invoicesRef.current = l; setInvoices(l); setInvoicesReady(true); }).catch(() => { if (alive) setInvoicesReady(false); });
@@ -363,6 +369,14 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
             undo: async () => { try { const back = await repo.updateProspect(id, { archived_at: null }); setProspects((l) => [back, ...l.filter((x) => x.id !== id)]); } catch (e) { fail(e, "Restauration impossible"); } },
           });
         } catch (e) { fail(e, "Archivage impossible"); }
+      },
+      prospectExtras,
+      async saveAnalysis(id, a) {
+        try {
+          const back = await repo.updateProspect(id, { ...a, ai_analyzed_at: new Date().toISOString() });
+          setProspects((l) => l.map((x) => (x.id === id ? back : x)));
+          return true;
+        } catch (e) { fail(e, "Enregistrement de l'analyse impossible"); return false; }
       },
       async archiveMany(ids) {
         const list = ids.map((i) => get(i)).filter((x): x is Prospect => !!x);
@@ -656,7 +670,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       toasts, toast, dismissToast, undoLast,
       quickAddOpen, setQuickAddOpen, paletteOpen, setPaletteOpen,
     };
-  }, [ready, repo, prospects, scoreRules, offers, quotes, quotesReady, company, logo, invoices, invoicesReady, sequences, runs, sequencesReady, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
+  }, [ready, repo, prospects, scoreRules, offers, quotes, quotesReady, company, logo, invoices, invoicesReady, prospectExtras, sequences, runs, sequencesReady, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
 
   if (state.status === "loading") return <>{fallback({ status: "loading" })}</>;
   if (state.status === "error") return <>{fallback(state)}</>;

@@ -113,3 +113,37 @@ describe("score", () => {
     expect(m.find((r) => r.key === "independent")).toMatchObject({ weight: 5, is_active: false, label: "Établissement indépendant" });
   });
 });
+
+describe("export Notion : tous les champs de la fiche", () => {
+  const headers = ["Nom", "Activité", "Adresse", "Téléphone", "Site web", "Contact principal", "Poste du contact principal", "Coordonnées", "Statut Notion", "Created time"];
+  const base: Omit<ImportContext, "origin"> = { categories: DEMO_REFERENCE.categories, tags: DEMO_REFERENCE.tags, stages: DEMO_REFERENCE.stages, existing: [], defaultCategoryId: null, stageId: DEMO_REFERENCE.stages[0].id };
+
+  it("devine toutes les colonnes, y compris poste et contact principal", () => {
+    const m = guessMapping(headers);
+    expect(m).toMatchObject({ 0: "name", 1: "activity", 2: "address", 3: "phone", 4: "website", 5: "contact_name", 6: "contact_role", 7: "coordinates", 8: "", 9: "" });
+  });
+
+  it("importe adresse, téléphone, site, contact (prénom/nom), poste, activité, coordonnées", () => {
+    const m = guessMapping(headers);
+    const [r] = buildRows([headers, ["Chez Marie (https://www.notion.so/abc)", "Restaurant de quartier", "12 rue Eau-de-Robec, 76000 Rouen", "02 35 00 00 00", "chezmarie.fr", "Marie Dupont", "Gérante", "marie@chezmarie.fr, 06 12 34 56 78, 49.4431, 1.0993", "Chaud", "2026-01-01"]], m, { ...base, origin: "notion" });
+    expect(r.status).toBe("new");
+    expect(r.input).toMatchObject({
+      name: "Chez Marie", activity: "Restaurant de quartier", address: "12 rue Eau-de-Robec, 76000 Rouen", website: "https://chezmarie.fr",
+      contact_first_name: "Marie", contact_last_name: "Dupont", contact_role: "Gérante", email: "marie@chezmarie.fr", lat: 49.4431, lng: 1.0993,
+    });
+    expect(r.input!.phone).toContain("02");
+    expect(r.input!.category_id).toBe(DEMO_REFERENCE.categories.find((c) => c.name === "Restaurant")!.id); // deviné d'après l'activité
+  });
+
+  it("une colonne non reconnue peut être conservée dans les notes avec son titre", () => {
+    const m = { ...guessMapping(headers), 8: "extra" as const };
+    const [r] = buildRows([headers, ["Test", "", "", "", "", "", "", "", "Chaud", ""]], m, { ...base, origin: "notion" });
+    expect(r.input!.highlights).toBe("Statut Notion : Chaud");
+  });
+
+  it("catégorie inconnue : le texte est gardé dans l'activité", () => {
+    const [r] = buildRows([["Nom", "Catégorie"], ["Test", "Cave à cigares"]], { 0: "name", 1: "category" }, { ...base, origin: "csv" });
+    expect(r.input!.activity).toBe("Cave à cigares");
+    expect(r.warnings.join(" ")).toContain("gardé");
+  });
+});

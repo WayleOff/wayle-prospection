@@ -7,20 +7,30 @@ export type ImportOrigin = "csv" | "notion";
 /** Champs de la fiche qu'une colonne du fichier peut alimenter. */
 export const IMPORT_FIELDS = [
   { key: "name", label: "Nom", words: ["nom", "name", "nom du commerce", "etablissement", "commerce", "entreprise", "societe", "raison sociale", "titre", "title", "enseigne"] },
-  { key: "category", label: "Catégorie", words: ["categorie", "category", "type", "secteur", "activite"] },
+  { key: "category", label: "Catégorie", words: ["categorie", "category", "type", "secteur", "type d etablissement", "type de commerce"] },
+  { key: "activity", label: "Activité (ce qu’ils font)", words: ["activite", "activites", "activite principale", "metier", "domaine", "domaine d activite", "specialite", "ce qu ils font", "presentation", "description de l activite", "description"] },
   { key: "instagram", label: "Instagram", words: ["instagram", "insta", "ig", "compte instagram", "profil instagram"] },
-  { key: "phone", label: "Téléphone", words: ["telephone", "tel", "phone", "mobile", "portable", "numero"] },
+  { key: "phone", label: "Téléphone", words: ["telephone", "tel", "phone", "mobile", "portable", "numero", "n de telephone", "numero de telephone", "tel portable", "tel fixe"] },
   { key: "email", label: "E-mail", words: ["email", "e mail", "mail", "courriel", "adresse mail", "adresse email"] },
-  { key: "website", label: "Site web", words: ["site", "site web", "website", "web", "url", "lien"] },
-  { key: "address", label: "Adresse", words: ["adresse", "address", "localisation", "lieu", "rue"] },
+  { key: "website", label: "Site web", words: ["site", "site web", "website", "web", "url", "lien", "site internet", "page web", "url du site", "lien du site"] },
+  { key: "address", label: "Adresse", words: ["adresse", "address", "localisation", "lieu", "rue", "adresse postale", "adresse complete", "emplacement"] },
+  { key: "coordinates", label: "Coordonnées (tél., e-mail, GPS…)", words: ["coordonnees", "coordonnee", "coordonnees du contact", "infos contact", "informations de contact", "coordonnees gps", "gps"] },
+  { key: "linkedin", label: "LinkedIn", words: ["linkedin", "lien linkedin", "profil linkedin"] },
+  { key: "tiktok", label: "TikTok", words: ["tiktok", "tik tok", "compte tiktok"] },
+  { key: "contact_name", label: "Contact (prénom et nom)", words: ["contact principal", "contact", "interlocuteur", "interlocuteur principal", "nom complet", "personne a contacter", "responsable", "gerant", "dirigeant", "decideur"] },
   { key: "contact_first_name", label: "Prénom du contact", words: ["prenom", "prenom du contact", "first name", "contact prenom"] },
-  { key: "contact_last_name", label: "Nom du contact", words: ["nom du contact", "contact", "interlocuteur", "last name", "contact nom"] },
+  { key: "contact_last_name", label: "Nom du contact", words: ["nom du contact", "last name", "contact nom"] },
+  { key: "contact_role", label: "Poste du contact", words: ["poste", "poste du contact", "fonction", "fonction du contact", "role", "titre du poste", "job title", "position", "poste occupe", "poste du contact principal"] },
   { key: "opened_on", label: "Date d’ouverture", words: ["ouverture", "date d ouverture", "ouvert le", "opened", "opening date", "date ouverture"] },
   { key: "highlights", label: "Points d’accroche / notes", words: ["notes", "note", "remarques", "remarque", "commentaire", "commentaires", "points d accroche", "description", "observations"] },
   { key: "ig_activity", label: "Activité Instagram", words: ["activite instagram", "activite ig", "instagram activite"] },
   { key: "is_independent", label: "Indépendant (oui/non)", words: ["independant", "independent"] },
   { key: "tags", label: "Étiquettes", words: ["etiquettes", "etiquette", "tags", "tag", "labels"] },
+  /** Plusieurs colonnes possibles : rien n'est perdu, la valeur est ajoutée aux notes avec le titre de la colonne. */
+  { key: "extra", label: "Ajouter aux notes (avec le titre)", words: [] },
 ] as const;
+/** Champs qui acceptent plusieurs colonnes à la fois. */
+export const MULTI_FIELDS: readonly ImportFieldKey[] = ["extra"];
 export type ImportFieldKey = (typeof IMPORT_FIELDS)[number]["key"];
 export type Mapping = Record<number, ImportFieldKey | "">; // index de colonne → champ
 
@@ -120,6 +130,35 @@ export function cleanPhone(raw: string): string | null {
   return v.replace(/\D/g, "").length >= 6 ? v : null;
 }
 
+/** « Marie Dupont » → prénom + nom ; un seul mot : prénom (c'est lui qui sert à écrire « Bonjour Marie »). */
+export function splitContactName(full: string): { first: string | null; last: string | null } {
+  const t = full.replace(/\s+/g, " ").trim();
+  if (!t) return { first: null, last: null };
+  const parts = t.split(" ");
+  if (parts.length === 1) return { first: parts[0], last: null };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
+
+export interface Coordinates { email?: string; phone?: string; website?: string; lat?: number; lng?: number; rest: string }
+/** Une cellule « Coordonnées » mélange souvent tout : on en tire e-mail, téléphone, site, position GPS ; le reste est conservé. */
+export function parseCoordinates(raw: string): Coordinates {
+  let rest = raw;
+  const out: Coordinates = { rest: "" };
+  const mail = rest.match(/[^\s,;<>()]+@[^\s,;<>()]+\.[a-z]{2,}/i);
+  if (mail) { const e = cleanEmail(mail[0]); if (e) { out.email = e; rest = rest.replace(mail[0], " "); } }
+  const url = rest.match(/(?:https?:\/\/|www\.)[^\s,;<>()]+/i);
+  if (url) { const w = cleanWebsite(url[0]); if (w) { out.website = w; rest = rest.replace(url[0], " "); } }
+  const gps = rest.match(/(-?\d{1,2}[.,]\d{3,})\s*[;,\s]\s*(-?\d{1,3}[.,]\d{3,})/);
+  if (gps) {
+    const lat = Number(gps[1].replace(",", ".")), lng = Number(gps[2].replace(",", "."));
+    if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) { out.lat = lat; out.lng = lng; rest = rest.replace(gps[0], " "); }
+  }
+  const tel = rest.match(/(?:\+|00)?\d[\d .\-()]{7,}\d/);
+  if (tel) { const p = cleanPhone(tel[0]); if (p) { out.phone = p; rest = rest.replace(tel[0], " "); } }
+  out.rest = rest.replace(/[,;|]+/g, " ").replace(/\s+/g, " ").trim();
+  return out;
+}
+
 // ── Construction des lignes à importer ──
 
 export interface ImportContext {
@@ -185,15 +224,46 @@ export function buildRows(table: string[][], mapping: Mapping, ctx: ImportContex
     const ind = val("is_independent");
     if (ind) { const b = parseBool(ind); if (b != null) input.is_independent = b; else warn("Indépendant", ind); }
     const addr = val("address"); if (addr) input.address = addr;
+    const cn = val("contact_name");
+    if (cn) { const { first, last } = splitContactName(cn); if (first) input.contact_first_name = first; if (last) input.contact_last_name = last; }
     const fn = val("contact_first_name"); if (fn) input.contact_first_name = fn;
     const ln = val("contact_last_name"); if (ln) input.contact_last_name = ln;
-    const notes = val("highlights"); if (notes) input.highlights = notes;
+    const role = val("contact_role"); if (role) input.contact_role = role;
+    const act = val("activity"); if (act) input.activity = act;
+    const li = val("linkedin"); if (li) { const w = cleanWebsite(li); if (w) input.linkedin = w; else warn("LinkedIn", li); }
+    const tk = val("tiktok"); if (tk) { const h = normHandle(tk); if (h && /^[a-z0-9._]{1,40}$/.test(h)) input.tiktok = `@${h}`; else warn("TikTok", tk); }
+    let notes = val("highlights");
+    const coord = val("coordinates");
+    if (coord) {
+      const c = parseCoordinates(coord);
+      if (c.email && !input.email) input.email = c.email;
+      if (c.phone && !input.phone) input.phone = c.phone;
+      if (c.website && !input.website) input.website = c.website;
+      if (c.lat != null && c.lng != null) { input.lat = c.lat; input.lng = c.lng; }
+      if (c.rest) notes = [notes, `Coordonnées : ${c.rest}`].filter(Boolean).join("\n");
+    }
+    for (const [i, k] of cols) {
+      if (k !== "extra") continue;
+      const raw = (cells[i] ?? "").trim();
+      const v = ctx.origin === "notion" ? stripNotionLinks(raw) : raw;
+      if (v) notes = [notes, `${(table[0][i] || `Colonne ${i + 1}`).trim()} : ${v}`].filter(Boolean).join("\n");
+    }
+    if (notes) input.highlights = notes;
 
     const catName = val("category");
     let category_id = ctx.defaultCategoryId;
     if (catName) {
       const id = catByName.get(norm(catName));
-      if (id) category_id = id; else warnings.push(`Catégorie « ${catName} » inconnue, ${ctx.defaultCategoryId ? "catégorie par défaut utilisée" : "laissée vide"}`);
+      if (id) category_id = id;
+      else {
+        warnings.push(`Catégorie « ${catName} » inconnue, ${ctx.defaultCategoryId ? "catégorie par défaut utilisée" : "laissée vide"} (le texte est gardé dans « Activité »)`);
+        if (!input.activity) input.activity = catName;
+      }
+    } else if (input.activity && !category_id) {
+      // Pas de colonne catégorie : on la devine si le texte d'activité contient le nom d'une catégorie connue.
+      const a = ` ${norm(input.activity)} `;
+      const hit = ctx.categories.find((c) => a.includes(` ${norm(c.name)} `));
+      if (hit) category_id = hit.id;
     }
     const tag_ids: string[] = [];
     const tagCell = val("tags");

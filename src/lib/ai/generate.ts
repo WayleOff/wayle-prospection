@@ -74,8 +74,8 @@ export function parseVariants(text: string, count: number): string[] {
 
 export interface Deps { apiKey: string; model?: string; baseUrl?: string; fetchImpl?: typeof fetch; timeoutMs?: number }
 
-/** Appelle l'API Claude côté serveur. La clé ne quitte jamais le serveur. */
-export async function generateVariants(input: GenerateInput, deps: Deps): Promise<string[]> {
+/** Appelle l'API Claude côté serveur et renvoie le texte de la réponse. La clé ne quitte jamais le serveur. */
+export async function callClaude(system: string, user: string, deps: Deps, maxTokens = 1500): Promise<string> {
   const f = deps.fetchImpl ?? fetch;
   let res: Response;
   try {
@@ -84,9 +84,9 @@ export async function generateVariants(input: GenerateInput, deps: Deps): Promis
       headers: { "content-type": "application/json", "x-api-key": deps.apiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: deps.model ?? "claude-sonnet-5-5",
-        max_tokens: 1500,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: buildUserPrompt(input) }],
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: "user", content: user }],
       }),
       signal: AbortSignal.timeout(deps.timeoutMs ?? 45000),
     });
@@ -104,7 +104,12 @@ export async function generateVariants(input: GenerateInput, deps: Deps): Promis
     throw new AiError(502, "upstream", "Claude est indisponible pour le moment.");
   }
   const json = (await res.json().catch(() => null)) as { content?: { type: string; text?: string }[] } | null;
-  const text = (json?.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+  return (json?.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+}
+
+/** Appelle l'API Claude pour réécrire un modèle de message. */
+export async function generateVariants(input: GenerateInput, deps: Deps): Promise<string[]> {
+  const text = await callClaude(SYSTEM_PROMPT, buildUserPrompt(input), deps);
   const variants = parseVariants(text, input.count);
   if (variants.length === 0) throw new AiError(502, "unreadable", "La réponse de Claude est illisible, réessaie.");
   return variants;

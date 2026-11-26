@@ -25,6 +25,7 @@ const HIDDEN = ["name_norm", "instagram_norm", "phone_norm", "import_batch_id", 
 function toProspect(r: Row): Prospect {
   const copy: Record<string, unknown> = { ...r };
   for (const k of HIDDEN) delete copy[k];
+  for (const k of ["contact_role", "activity", "ai_description", "ai_swot", "ai_analyzed_at"]) if (copy[k] === undefined) copy[k] = null;
   return { ...(copy as unknown as Omit<Prospect, "tag_ids">), tag_ids: (r.prospect_tags ?? []).map((t) => t.tag_id) };
 }
 
@@ -34,6 +35,18 @@ function fail(error: { message: string } | null): asserts error is null {
 
 /** Implémentation Supabase : les droits par ligne (RLS) de la base décident de ce que chaque compte voit. */
 export function createSupabaseRepo(sb: SupabaseClient): Repo {
+  const EXTRA_KEYS = ["contact_role", "activity", "ai_description", "ai_swot", "ai_analyzed_at"];
+  let extras: boolean | null = null; // colonnes de la migration « fiche prospect (IA) » : connues au premier usage
+  const probeExtras = async (): Promise<boolean> => {
+    if (extras === null) { const { error } = await sb.from("prospects").select("contact_role").limit(1); extras = !error; }
+    return extras;
+  };
+  const strip = async <T extends object>(o: T): Promise<T> => {
+    if (await probeExtras()) return o;
+    const copy: Record<string, unknown> = { ...(o as Record<string, unknown>) };
+    for (const k of EXTRA_KEYS) delete copy[k];
+    return copy as T;
+  };
   let depositColumn = true; // devient faux si la migration « acompte » n'est pas appliquée
   return {
     mode: "supabase",
@@ -70,6 +83,8 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
       fail(error);
     },
 
+    hasProspectExtras: probeExtras,
+
     async listProspects() {
       const out: Prospect[] = [];
       for (let from = 0; ; from += PAGE) {
@@ -103,14 +118,14 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
 
     async createProspect(input, authorId) {
       const { data, error } = await sb.from("prospects")
-        .insert({ owner_id: authorId, ...input, created_by: authorId })
+        .insert({ owner_id: authorId, ...(await strip(input)), created_by: authorId })
         .select("*, prospect_tags(tag_id)").single();
       fail(error);
       return toProspect(data as Row);
     },
 
     async updateProspect(id, patch) {
-      const { data, error } = await sb.from("prospects").update(patch).eq("id", id).select("*, prospect_tags(tag_id)").single();
+      const { data, error } = await sb.from("prospects").update(await strip(patch)).eq("id", id).select("*, prospect_tags(tag_id)").single();
       fail(error);
       return toProspect(data as Row);
     },
@@ -263,7 +278,7 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
       try {
         for (let i = 0; i < rows.length; i += 200) {
           // Identifiants fixés ici : les étiquettes se rattachent sans dépendre de l'ordre des lignes renvoyées.
-          const chunk = rows.slice(i, i + 200).map((r) => ({ ...r, id: crypto.randomUUID() }));
+          const chunk = await Promise.all(rows.slice(i, i + 200).map(async (r) => ({ ...r, input: await strip(r.input), id: crypto.randomUUID() })));
           const { data, error } = await sb.from("prospects")
             .insert(chunk.map((r) => ({ id: r.id, owner_id: authorId, ...r.input, created_by: authorId, import_batch_id: batchId })))
             .select("*, prospect_tags(tag_id)");

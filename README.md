@@ -39,6 +39,9 @@ Prospects → **Importer**.
 - **Doublons** : même Instagram, même téléphone ou nom proche, contre la base *et* entre lignes du fichier. Ils sont ignorés par défaut ; une case permet d'en importer un quand même.
 - L'import est un lot : « Annuler » dans la notification (8 s, ou Ctrl/Cmd + Z) archive toutes les fiches du lot. Les fiches importées ont la source « Import CSV » ou « Import Notion ».
 - Limites : 8 Mo, 5 000 lignes par fichier.
+- **Colonnes reconnues** (en plus du nom, de la catégorie, de l'Instagram, du téléphone, de l'e-mail) : adresse, site web, **contact principal** (« Marie Dupont » est coupé en prénom + nom), **poste du contact**, **activité**, **coordonnées** (une cellule mêlant e-mail, téléphone, site ou position GPS est triée), LinkedIn, TikTok. Une catégorie inconnue n'est plus perdue : son texte va dans « Activité ».
+- **Rien ne se perd en silence** : les colonnes qui contiennent des données mais ne sont pas importées sont signalées, avec un bouton « Les ajouter aux notes de la fiche » (chaque valeur est reprise avec le titre de sa colonne).
+
 
 ## Offres et devis
 
@@ -97,6 +100,12 @@ Statistiques → **Exports CSV** : le **bilan des 7 derniers jours** (une ligne 
 ## Menu clic droit
 
 Sur la liste des prospects, le pipeline et « Aujourd'hui », un clic droit sur un prospect ouvre un menu d'actions rapides : ouvrir la fiche, écrire un message, appeler, ouvrir son Instagram, changer d'étape, de température, programmer une relance (demain, +3 j, +7 j, ou la retirer), « Ne pas contacter » et archiver. Sur écran tactile ou au clavier, le bouton « ⋯ » (colonne Actions, ou en haut à droite de chaque carte mobile) ouvre le même menu. Flèches haut/bas pour naviguer, Échap pour fermer. « Supprimer » = archiver : le prospect disparaît des listes et un bouton « Annuler » le restaure aussitôt.
+
+## Analyse IA d'un prospect (description + SWOT vidéo)
+
+Sur la fiche, section **Analyse IA** → « Générer » : Claude rédige (1) une description de l'activité et (2) un **SWOT de sa communication vidéo** (forces, faiblesses, opportunités, menaces) et liste ce qu'il faut **vérifier soi-même**. Il s'appuie sur la fiche (catégorie, activité, notes, Instagram, activité Instagram observée…) et, si un site web est renseigné, sur le texte de sa page d'accueil, lu côté serveur (sites publics uniquement : adresses locales/privées refusées, 400 Ko max). Claude **ne voit ni Instagram, ni TikTok, ni Google** : l'analyse est une base de travail à relire, jamais une vérité. Le résultat est enregistré sur la fiche (« Régénérer » pour le refaire). Nécessite `ANTHROPIC_API_KEY` (comme les messages).
+
+**Mise à jour de la base (une fois)** : les champs « Poste du contact », « Activité » et l'analyse IA demandent les colonnes de `supabase/migrations/20261130000000_prospect_ai.sql`. Sans elles, l'appli fonctionne mais ces champs ne sont pas enregistrés ; un encart avec le SQL à copier s'affiche (fiche et import). Supabase → SQL Editor → coller → Run.
 
 ## Sélection multiple, archives et suppression définitive
 

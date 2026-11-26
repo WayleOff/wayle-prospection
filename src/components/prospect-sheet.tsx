@@ -1,10 +1,11 @@
 "use client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Archive, CalendarClock, CheckCheck, Download, ExternalLink, FilePlus2, MessageSquareText, Phone, Send, Trash2 } from "lucide-react";
+import { Archive, CalendarClock, CheckCheck, Download, ExternalLink, FilePlus2, MessageSquareText, Phone, RefreshCw, Send, Sparkles, Trash2 } from "lucide-react";
 import { useApp } from "./app-provider";
 import { Button, CloseButton, Dialog, Dot, inputCls } from "./ui";
 import { MessageComposer } from "./message-composer";
+import { ProspectSqlNotice } from "./sql-notice";
 import { QuoteDialog } from "./quote-dialog";
 import { downloadQuote } from "./quote-download";
 import { STATUS_LABEL, fmtDateFr, fmtMoney, lineFromOffer } from "@/lib/quote";
@@ -14,7 +15,7 @@ import { stepText } from "@/lib/sequence";
 import { computeScore } from "@/lib/score";
 import { ACTIVITY_LABEL, CHANNEL_LABEL, DISTRICT_LABEL, HEAT_COLOR, HEAT_LABEL, IG_LABEL, addDays, fmtDue, fmtEuros, fmtWhen } from "@/lib/labels";
 import { instagramUrl, telHref } from "@/lib/normalize";
-import type { Activity, Channel, District, Heat, IgActivity, Prospect, ProspectPatch } from "@/lib/types";
+import type { Activity, AiSwot, Channel, District, Heat, IgActivity, Prospect, ProspectPatch } from "@/lib/types";
 
 /** Fiche prospect : panneau latéral ouvert par ?fiche=<id>, champs enregistrés à la sortie du champ. */
 export function ProspectSheet() {
@@ -282,15 +283,19 @@ function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
             <Text id="f-web" label="Site web" value={p.website} onSave={(v) => void save({ website: v })} inputMode="url" />
             <Text id="f-fn" label="Prénom du contact" value={p.contact_first_name} onSave={(v) => void save({ contact_first_name: v })} />
             <Text id="f-ln" label="Nom du contact" value={p.contact_last_name} onSave={(v) => void save({ contact_last_name: v })} />
+            <Text id="f-role" label="Poste du contact" value={p.contact_role ?? null} onSave={(v) => void save({ contact_role: v })} placeholder="Gérant, responsable communication…" />
             <Pick<Channel> id="f-chan" label="Canal préféré" value={p.preferred_channel} empty="—" options={(Object.keys(CHANNEL_LABEL) as Channel[]).map((c) => ({ value: c, label: CHANNEL_LABEL[c] }))} onChange={(v) => void save({ preferred_channel: v })} />
             <Pick<District> id="f-dist" label="Quartier" value={p.district} empty="—" options={(Object.keys(DISTRICT_LABEL) as District[]).map((d) => ({ value: d, label: DISTRICT_LABEL[d] }))} onChange={(v) => void save({ district: v })} />
           </div>
           <Text id="f-addr" label="Adresse" value={p.address} onSave={(v) => void save({ address: v })} />
         </section>
 
+        <AnalysisBlock p={p} />
+
         {/* Profil */}
         <section aria-labelledby="s-profil" className="space-y-3">
           <h3 id="s-profil" className={SECTION}>Profil</h3>
+          <Text id="f-activity" label="Activité" value={p.activity ?? null} onSave={(v) => void save({ activity: v })} multiline placeholder="Ce qu’ils font, en quelques mots (restaurant de quartier, label de musique…)" />
           <Text id="f-high" label="Points d’accroche" value={p.highlights} onSave={(v) => void save({ highlights: v })} multiline placeholder="Ce qui rend ce prospect intéressant, pour personnaliser le message" />
           <div className="grid grid-cols-2 gap-3">
             <Pick<IgActivity> id="f-iga" label="Activité Instagram" value={p.ig_activity} empty="—" options={(Object.keys(IG_LABEL) as IgActivity[]).map((k) => ({ value: k, label: IG_LABEL[k] }))} onChange={(v) => void save({ ig_activity: v })} />
@@ -367,6 +372,80 @@ function Feed({ prospectId }: { prospectId: string }) {
             ))}
           </ol>
         )}
+    </section>
+  );
+}
+
+const SWOT_BOX: { key: keyof Omit<AiSwot, "unknowns">; title: string; tone: string }[] = [
+  { key: "strengths", title: "Forces", tone: "border-emerald-500/40 bg-emerald-500/5" },
+  { key: "weaknesses", title: "Faiblesses", tone: "border-amber-500/40 bg-amber-500/5" },
+  { key: "opportunities", title: "Opportunités", tone: "border-sky-500/40 bg-sky-500/5" },
+  { key: "threats", title: "Menaces", tone: "border-rose-500/40 bg-rose-500/5" },
+];
+
+/** Description de l'activité et SWOT de la communication vidéo, rédigés par Claude à partir de la fiche et du site web. */
+function AnalysisBlock({ p }: { p: Prospect }) {
+  const { ref, saveAnalysis, prospectExtras, toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+
+  const run = async () => {
+    setBusy(true); setError(""); setNote("");
+    try {
+      const res = await fetch("/api/prospects/analyze", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: p.name, category: ref.categories.find((c) => c.id === p.category_id)?.name ?? null, activity: p.activity, address: p.address,
+          district: p.district ? DISTRICT_LABEL[p.district] : null, website: p.website, instagram: p.instagram, tiktok: p.tiktok, linkedin: p.linkedin,
+          igActivity: p.ig_activity ? IG_LABEL[p.ig_activity] : null, highlights: p.highlights, openedOn: p.opened_on, independent: p.is_independent, contactRole: p.contact_role,
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as { description?: string; swot?: AiSwot; message?: string; error?: string; sources?: { site: boolean; websiteGiven: boolean } } | null;
+      if (!res.ok || !data?.description || !data.swot) { setError(data?.message ?? data?.error ?? "Analyse impossible."); return; }
+      if (data.sources?.websiteGiven && !data.sources.site) setNote("Le site web n’a pas pu être lu : l’analyse repose sur la fiche seule.");
+      else if (!data.sources?.websiteGiven) setNote("Pas de site web renseigné : l’analyse repose sur la fiche seule.");
+      if (await saveAnalysis(p.id, { ai_description: data.description, ai_swot: data.swot })) toast("Analyse enregistrée sur la fiche");
+    } catch { setError("Impossible de joindre le service d’analyse."); }
+    finally { setBusy(false); }
+  };
+
+  const has = !!p.ai_description || !!p.ai_swot;
+  return (
+    <section aria-labelledby="s-ia" className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 id="s-ia" className={SECTION}>Analyse IA</h3>
+        {prospectExtras ? <Button size="sm" onClick={() => void run()} disabled={busy}>{has ? <RefreshCw size={13} aria-hidden /> : <Sparkles size={13} aria-hidden />} {busy ? "Analyse en cours…" : has ? "Régénérer" : "Générer"}</Button> : null}
+      </div>
+      {!prospectExtras ? <ProspectSqlNotice what="L’analyse IA ne peut pas être enregistrée" /> : null}
+      {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
+      {note ? <p role="status" className="text-xs text-muted">{note}</p> : null}
+      {!has && !busy && !error ? <p className="text-sm text-muted">Une description de l’activité et un SWOT de sa communication vidéo, rédigés par Claude à partir de la fiche et de son site web (s’il est renseigné). Plus la fiche est complète, plus l’analyse est juste.</p> : null}
+      {p.ai_description ? (
+        <div>
+          <div className="mb-1 text-xs font-medium text-muted">Description de l’activité</div>
+          <p className="whitespace-pre-wrap text-sm" data-testid="ai-description">{p.ai_description}</p>
+        </div>
+      ) : null}
+      {p.ai_swot ? (
+        <div>
+          <div className="mb-1 text-xs font-medium text-muted">SWOT de la communication vidéo</div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" data-testid="ai-swot">
+            {SWOT_BOX.map((b) => (
+              <div key={b.key} className={`rounded-xl border p-3 ${b.tone}`}>
+                <div className="text-xs font-semibold">{b.title}</div>
+                <ul className="mt-1 list-disc space-y-1 pl-4 text-[13px]">{(p.ai_swot![b.key] ?? []).map((x, i) => <li key={i}>{x}</li>)}</ul>
+              </div>
+            ))}
+          </div>
+          {p.ai_swot.unknowns?.length ? (
+            <details className="mt-2 text-xs text-muted"><summary className="cursor-pointer">À vérifier de ton côté ({p.ai_swot.unknowns.length})</summary>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">{p.ai_swot.unknowns.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            </details>
+          ) : null}
+          <p className="mt-2 text-[11px] text-muted">Rédigé par IA{p.ai_analyzed_at ? ` le ${new Date(p.ai_analyzed_at).toLocaleDateString("fr-FR")}` : ""} d’après la fiche et le site : à relire, Claude ne voit ni Instagram ni Google.</p>
+        </div>
+      ) : null}
     </section>
   );
 }

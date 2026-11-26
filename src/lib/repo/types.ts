@@ -8,6 +8,8 @@ export interface Repo {
   mode: "demo" | "supabase";
   reference(): Promise<Reference>;
   listProspects(): Promise<Prospect[]>;
+  /** Faux tant que la migration « fiche prospect (IA) » n'est pas appliquée : poste, activité, description et SWOT ne sont alors pas enregistrés. */
+  hasProspectExtras(): Promise<boolean>;
   /** Fiches archivées (hors de la liste principale), les plus récemment archivées d'abord. */
   listArchivedProspects(): Promise<Prospect[]>;
   /** Suppression définitive (historique, messages, devis et parcours de ces fiches compris). Irréversible. */

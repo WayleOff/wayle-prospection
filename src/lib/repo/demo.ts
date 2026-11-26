@@ -40,6 +40,7 @@ export function createDemoRepo(): Repo {
       for (const p of s.prospects) if (p.stage_id === id) p.stage_id = moveToId;
       s.stages = (s.stages ?? DEMO_REFERENCE.stages).filter((x) => x.id !== id); save();
     },
+    async hasProspectExtras() { return true; },
     async listProspects() { return structuredClone(load().prospects.filter((p) => !p.archived_at)); },
     async listArchivedProspects() {
       return structuredClone(load().prospects.filter((p) => p.archived_at).sort((a, b) => (b.archived_at ?? "").localeCompare(a.archived_at ?? "")));
@@ -59,7 +60,7 @@ export function createDemoRepo(): Repo {
       const p: Prospect = {
         category_id: null, owner_id: authorId, heat: "cold", preferred_channel: null, address: null, district: null, lat: null, lng: null,
         website: null, instagram: null, tiktok: null, linkedin: null, email: null, phone: null, contact_first_name: null,
-        contact_last_name: null, opened_on: null, source: null, score: 0, est_amount_cents: null, highlights: null, ig_activity: null,
+        contact_last_name: null, contact_role: null, activity: null, ai_description: null, ai_swot: null, ai_analyzed_at: null, opened_on: null, source: null, score: 0, est_amount_cents: null, highlights: null, ig_activity: null,
         is_independent: true, next_action_label: null, next_action_at: null, do_not_contact: false, lost_reason: null, archived_at: null,
         ...input, id: uid(), created_at: now, updated_at: now, tag_ids: [],
       };
@@ -158,7 +159,7 @@ export function createDemoRepo(): Repo {
       const prospects = rows.map((r): Prospect => ({
         category_id: null, owner_id: authorId, heat: "cold", preferred_channel: null, address: null, district: null, lat: null, lng: null,
         website: null, instagram: null, tiktok: null, linkedin: null, email: null, phone: null, contact_first_name: null,
-        contact_last_name: null, opened_on: null, source: null, score: 0, est_amount_cents: null, highlights: null, ig_activity: null,
+        contact_last_name: null, contact_role: null, activity: null, ai_description: null, ai_swot: null, ai_analyzed_at: null, opened_on: null, source: null, score: 0, est_amount_cents: null, highlights: null, ig_activity: null,
         is_independent: true, next_action_label: null, next_action_at: null, do_not_contact: false, lost_reason: null, archived_at: null,
         ...r.input, id: uid(), created_at: now, updated_at: now, tag_ids: [...r.tag_ids],
       }));

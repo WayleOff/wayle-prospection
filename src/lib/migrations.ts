@@ -28,3 +28,12 @@ end $$;
 grant select, insert, update, delete on invoices to authenticated;
 revoke all on invoices from anon;
 `;
+
+/** Copie exacte de supabase/migrations/20261130000000_prospect_ai.sql (un test vérifie l'égalité). */
+export const PROSPECT_AI_SQL = `-- Fiche prospect : poste du contact, activité, description et analyse SWOT générées par l'IA.
+alter table prospects add column if not exists contact_role text;
+alter table prospects add column if not exists activity text;
+alter table prospects add column if not exists ai_description text;
+alter table prospects add column if not exists ai_swot jsonb;
+alter table prospects add column if not exists ai_analyzed_at timestamptz;
+`;

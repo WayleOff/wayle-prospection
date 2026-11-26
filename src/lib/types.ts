@@ -11,6 +11,9 @@ export interface Category { id: string; name: string; default_tone: Tone; is_pri
 export interface Tag { id: string; name: string; color: string }
 export interface Profile { id: string; name: string; color: string }
 
+/** Analyse SWOT de la communication vidéo d'un prospect (rédigée par l'IA, à vérifier). */
+export interface AiSwot { strengths: string[]; weaknesses: string[]; opportunities: string[]; threats: string[]; /** Ce que l'IA ne pouvait pas savoir. */ unknowns: string[] }
+
 export interface Prospect {
   id: string;
   name: string;
@@ -31,6 +34,15 @@ export interface Prospect {
   phone: string | null;
   contact_first_name: string | null;
   contact_last_name: string | null;
+  /** Poste du contact principal (gérant, responsable communication…). */
+  contact_role: string | null;
+  /** Ce que fait l'établissement, en quelques mots (texte libre : import ou saisie). */
+  activity: string | null;
+  /** Description de l'activité rédigée par l'IA à partir de la fiche et du site. */
+  ai_description: string | null;
+  /** Analyse SWOT de sa communication vidéo, rédigée par l'IA. */
+  ai_swot: AiSwot | null;
+  ai_analyzed_at: string | null;
   opened_on: string | null; // AAAA-MM-JJ
   source: string | null;
   score: number;
