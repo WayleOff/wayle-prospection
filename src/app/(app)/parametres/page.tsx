@@ -28,7 +28,7 @@ export default function Page() {
       <section className="rounded-2xl border border-border bg-surface p-5" aria-labelledby="p-claude">
         <h2 id="p-claude" className="text-sm font-semibold">Claude (rédaction des messages)</h2>
         <p className="mt-3 text-sm" role="status">
-          {claude === null ? "Vérification…" : claude === "error" ? "État indisponible pour le moment." : claude.configured ? `Clé configurée. Modèle utilisé : ${claude.model}.` : "Clé non configurée : le bouton « Réécrire avec Claude » est désactivé, les modèles restent utilisables."}
+          {claude === null ? "Vérification…" : claude === "error" ? "État indisponible pour le moment." : claude.configured ? `Clé configurée. Modèle utilisé : ${claude.model}.` : "Clé non configurée : sans frais, utilise « Brief pour Claude » avec ton abonnement Claude (copie la fiche, colle-la dans Claude, puis recolle sa réponse). Les modèles restent utilisables."}
         </p>
         <p className="mt-2 text-xs text-muted">La clé reste côté serveur : elle se règle dans Vercel (Settings → Environment Variables → <code>ANTHROPIC_API_KEY</code>), puis un redéploiement. Le détail est dans le README.</p>
       </section>

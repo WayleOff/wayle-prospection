@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardCheck, Copy, ExternalLink, Sparkles, TriangleAlert } from "lucide-react";
+import { ClipboardCheck, ClipboardPaste, Copy, ExternalLink, Sparkles, TriangleAlert } from "lucide-react";
 import { useApp } from "./app-provider";
 import { Button, CloseButton, Dialog, inputCls } from "./ui";
 import { CHANNEL_LABEL } from "@/lib/labels";
+import { buildBrief, parsePastedVariants } from "@/lib/ai/brief";
+import type { GenerateInput } from "@/lib/ai/generate";
 import { OFFERS, detailFrom, fillTemplate, pickTemplate, type OfferId } from "@/lib/message";
 import { instagramUrl, telHref } from "@/lib/normalize";
 import type { Channel, Prospect, Template, Tone } from "@/lib/types";
@@ -64,6 +66,7 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
   const [busy, setBusy] = useState<"ai" | "send" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [paste, setPaste] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
   const contactedRef = useRef(p.stage_id !== firstOpen?.id);
 
@@ -108,20 +111,21 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
   const words = current.trim() ? current.trim().split(/\s+/).length : 0;
   const link = channelLink(p, channel);
 
+  const genInput = (count: 2 | 3): GenerateInput => {
+    const base = template ? fillTemplate(template.body, { prospect: p, offer: offerLabel, detail: detailFrom(highlights) }).text : current;
+    return {
+      name: p.name, category: category?.name ?? null, district: p.district === "rive_gauche" ? "rive gauche" : p.district === "rive_droite" ? "rive droite" : null,
+      channel, tone, contactFirstName: p.contact_first_name, highlights: highlights || null, website: p.website, instagram: p.instagram,
+      offer: offerLabel, template: base || "(aucun modèle : écris un premier message)", count,
+    };
+  };
+
   const rewrite = async () => {
     setError(null); setBusy("ai");
     abort.current?.abort();
     const ctl = new AbortController(); abort.current = ctl;
     try {
-      const base = template ? fillTemplate(template.body, { prospect: p, offer: offerLabel, detail: detailFrom(highlights) }).text : current;
-      const res = await fetch("/api/messages/generate", {
-        method: "POST", headers: { "content-type": "application/json" }, signal: ctl.signal,
-        body: JSON.stringify({
-          name: p.name, category: category?.name ?? null, district: p.district === "rive_gauche" ? "rive gauche" : p.district === "rive_droite" ? "rive droite" : null,
-          channel, tone, contactFirstName: p.contact_first_name, highlights: highlights || null, website: p.website, instagram: p.instagram,
-          offer: offerLabel, template: base || "(aucun modèle : écris un premier message)", count: 3,
-        }),
-      });
+      const res = await fetch("/api/messages/generate", { method: "POST", headers: { "content-type": "application/json" }, signal: ctl.signal, body: JSON.stringify(genInput(3)) });
       const j = await res.json().catch(() => null) as { variants?: string[]; message?: string } | null;
       if (!res.ok || !j?.variants?.length) { setError(j?.message ?? "Claude n'a pas pu répondre."); return; }
       setVariants(j.variants.map((text) => ({ text, ai: true })));
@@ -129,6 +133,22 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
     } catch (e) {
       if ((e as Error).name !== "AbortError") setError("Claude ne répond pas, réessaie dans un instant.");
     } finally { setBusy(null); }
+  };
+
+  // Sans clé API : le brief se colle dans l'application Claude (abonnement), la réponse se recolle ici.
+  const copyBrief = async () => {
+    setError(null);
+    const ok = await copyText(buildBrief(genInput(3)));
+    if (ok) { toast("Brief copié : colle-le dans Claude, puis reviens coller sa réponse ici"); window.open("https://claude.ai/new", "_blank", "noopener,noreferrer"); setPaste(""); }
+    else toast("Copie impossible", { kind: "error" });
+  };
+  const usePasted = () => {
+    const list = parsePastedVariants(paste ?? "");
+    if (list.length === 0) { setError("Rien à utiliser : colle la réponse de Claude dans le champ."); return; }
+    setError(null);
+    setVariants(list.map((text) => ({ text, ai: true })));
+    setActive(0);
+    setPaste(null);
   };
 
   const edit = (text: string) => setVariants((l) => l.map((v, i) => (i === active ? { ...v, text } : v)));
@@ -205,12 +225,24 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
 
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={() => fill(template)} disabled={busy !== null}>Remplir le modèle</Button>
-          <Button variant="primary" onClick={() => void rewrite()} disabled={busy !== null || aiState?.configured === false}
-            title={aiState?.configured === false ? "La clé Claude n'est pas configurée (voir Paramètres)" : "Claude propose 3 variantes à partir de la fiche"}>
-            <Sparkles size={15} aria-hidden /> {busy === "ai" ? "Claude écrit…" : "Réécrire avec Claude"}
+          {aiState?.configured ? (
+            <Button variant="primary" onClick={() => void rewrite()} disabled={busy !== null} title="Claude propose 3 variantes à partir de la fiche">
+              <Sparkles size={15} aria-hidden /> {busy === "ai" ? "Claude écrit…" : "Réécrire avec Claude"}
+            </Button>
+          ) : null}
+          <Button variant={aiState?.configured ? "secondary" : "primary"} onClick={() => void copyBrief()} disabled={busy !== null} title="Copie la fiche et les consignes, à coller dans l'application Claude (abonnement, sans clé API)">
+            <Sparkles size={15} aria-hidden /> Brief pour Claude
           </Button>
-          {aiState?.configured === false ? <span className="text-xs text-muted">Clé Claude non configurée : modèles seuls.</span> : null}
+          <Button onClick={() => setPaste((v) => (v === null ? "" : null))} aria-expanded={paste !== null}><ClipboardPaste size={15} aria-hidden /> Coller la réponse de Claude</Button>
         </div>
+        {paste !== null ? (
+          <div className="space-y-2 rounded-xl border border-border bg-subtle/50 p-3">
+            <label htmlFor="mc-paste" className="block text-xs font-medium text-muted">Colle ici la réponse de Claude (les variantes sont repérées automatiquement)</label>
+            <textarea id="mc-paste" rows={6} autoFocus value={paste} onChange={(e) => setPaste(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm hover:border-muted/50" />
+            <div className="flex justify-end gap-2"><Button size="sm" onClick={() => setPaste(null)}>Annuler</Button><Button size="sm" variant="primary" onClick={usePasted} disabled={!paste.trim()}>Utiliser ces variantes</Button></div>
+          </div>
+        ) : null}
         {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
 
         {variants.length > 1 ? (
@@ -224,7 +256,7 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
 
         <div>
           <label htmlFor="mc-body" className="mb-1 flex items-center justify-between text-xs font-medium text-muted">
-            <span>Message{variants[active]?.ai ? " · écrit par Claude" : ""}</span><span className="tabular-nums">{words} mots</span>
+            <span>Message{variants[active]?.ai ? " · écrit par Claude" : ""}</span><span className="tabular-nums">{words} mot{words > 1 ? "s" : ""}</span>
           </label>
           <textarea id="mc-body" rows={12} value={current} onChange={(e) => edit(e.target.value)} placeholder={templates && forChannel.length === 0 ? "Aucun modèle pour ce canal : écris ton message ici ou crée un modèle dans Messages." : ""}
             className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm leading-relaxed hover:border-muted/50" />

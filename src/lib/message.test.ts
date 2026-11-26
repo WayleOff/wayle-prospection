@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AiError, buildUserPrompt, generateVariants, parseInput, parseVariants, type GenerateInput } from "./ai/generate";
+import { buildBrief, parsePastedVariants } from "./ai/brief";
 import { DEMO_CATEGORIES } from "./repo/demo-data";
 import { demoProspects } from "./repo/demo-data";
 import { detailFrom, fillTemplate, pickTemplate, starterTemplates } from "./message";
@@ -88,5 +89,25 @@ describe("Claude", () => {
     expect(model.message).toContain("claude-x");
     const down = (async () => { throw new Error("réseau"); }) as unknown as typeof fetch;
     expect(((await generateVariants(input, { apiKey: "k", fetchImpl: down }).catch((e) => e)) as AiError).code).toBe("unreachable");
+  });
+});
+
+describe("brief pour l'application Claude", () => {
+  it("contient les règles de style, la fiche et le format attendu", () => {
+    const b = buildBrief(input);
+    expect(b).toContain("Jonas Deschamps");
+    expect(b).toContain("<fiche>");
+    expect(b).toContain("=== VARIANTE 3 ===");
+    expect(b).not.toContain('{"variants"');
+  });
+  it("découpe la réponse collée", () => {
+    const a = "=== VARIANTE 1 ===\nBonjour Léa,\nPremière.\n\n=== VARIANTE 2 ===\nSalut Léa, seconde.\n=== VARIANTE 3 ===\nTroisième";
+    expect(parsePastedVariants(a)).toEqual(["Bonjour Léa,\nPremière.", "Salut Léa, seconde.", "Troisième"]);
+    expect(parsePastedVariants("Voici trois variantes :\n\n=== VARIANTE 1 ===\nUn\n=== VARIANTE 2 ===\nDeux")).toEqual(["Un", "Deux"]);
+    expect(parsePastedVariants("**Variante 1**\nUn\n\n**Variante 2**\nDeux")).toEqual(["Un", "Deux"]);
+    expect(parsePastedVariants("Un\n---\nDeux")).toEqual(["Un", "Deux"]);
+    expect(parsePastedVariants('{"variants":["a","b"]}')).toEqual(["a", "b"]);
+    expect(parsePastedVariants("Un seul message")).toEqual(["Un seul message"]);
+    expect(parsePastedVariants("  ")).toEqual([]);
   });
 });
