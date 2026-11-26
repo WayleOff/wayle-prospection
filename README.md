@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Wayle · Prospection
 
-## Getting Started
+Outil de prospection de Wayle Production (vidéaste, Rouen), pensé comme un petit CRM : fiches prospects, pipeline, relances, messages générés avec Claude, offres et devis.
+Interface en français, utilisable sur ordinateur et sur téléphone.
 
-First, run the development server:
+**État : étape (a) — connexion, fiches prospects, liste filtrable, ajout rapide avec détection de doublons, historique, barre de commande (Ctrl/Cmd + K).**
+Les écrans Aujourd'hui, Pipeline, Carte, Messages, Offres et Statistiques affichent « Pas encore construit » et seront ajoutés étape par étape.
+
+## Essayer tout de suite (sans compte)
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install --legacy-peer-deps
+NEXT_PUBLIC_DEMO=1 npm run dev     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Le mode démonstration charge 15 prospects fictifs de Rouen et garde vos modifications dans le navigateur. Rien n'est envoyé nulle part.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Raccourcis
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Touche | Action |
+|---|---|
+| `Ctrl/Cmd + K` | Barre de commande : chercher un prospect, aller à une page |
+| `N` | Nouveau prospect |
+| `/` | Aller à la recherche |
+| `R` | Planifier une relance (fiche ouverte) |
+| `Ctrl/Cmd + Z` | Annuler la dernière action annulable |
+| `Échap` | Fermer la fiche ou la fenêtre |
 
-## Learn More
+## Mise en service (vraies données)
 
-To learn more about Next.js, take a look at the following resources:
+1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
+2. **Invitations** — dans l'éditeur SQL, *avant* d'inviter quiconque :
+   `insert into team_invites (email) values ('vous@exemple.fr');` (en minuscules). Seules les adresses listées obtiennent un profil ; le prénom affiché est tiré de l'adresse et modifiable dans la table `profiles`.
+3. **Authentification** (Authentication → Providers → Email) : désactiver les inscriptions libres (« Allow new users to sign up »), laisser « Confirm email » actif. Dans *URL Configuration*, mettre l'adresse du site en *Site URL* et `https://votre-site/auth/callback` en *Redirect URLs*.
+4. **Modèles d'e-mail** (Authentication → Email Templates), pour « Magic Link » et « Invite user » : remplacer le lien par
+   `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink` (et `type=invite` pour l'invitation).
+5. **Vercel** — importer le dépôt GitHub, ajouter `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Project Settings → API), déployer.
+6. **Sauvegarde** — le plan gratuit de Supabase met le projet en pause après une semaine sans activité et n'inclut pas de sauvegardes téléchargeables : l'export CSV hebdomadaire (étape ultérieure) sert de filet de sécurité.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Les clés secrètes (service role, clé Anthropic) ne doivent jamais être dans le dépôt, ni dans une variable commençant par `NEXT_PUBLIC_`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Sécurité des données
 
-## Deploy on Vercel
+- Chaque table est protégée par des règles *Row Level Security* : seuls les membres de l'équipe (`is_member()`) lisent et écrivent.
+- Les e-mails d'invitation sont dans `team_invites`, illisible depuis le navigateur.
+- Données de prospection B2B : informer la personne contactée et lui permettre de s'opposer facilement (case « Ne pas contacter » sur la fiche) ; ne pas conserver au-delà de 3 ans après le dernier contact.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Développement
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run dev         # serveur de développement
+npm test            # tests de la logique (normalisation, doublons, saisie rapide, cohérence démo/SQL)
+npm run typecheck   # TypeScript
+npm run lint
+npm run test:sql    # tests du schéma sur un Postgres local (nécessite PostgreSQL 16 installé)
+```
+
+Structure : `src/lib` (logique pure et accès aux données, `repo/` = Supabase ou démo), `src/components` (coque, fiche, ajout rapide, barre de commande), `src/app` (pages), `supabase/` (schéma, données de départ, tests SQL).
+
+Pile : Next.js (App Router), React, TypeScript, Tailwind CSS, Supabase (Postgres, authentification par lien magique, RLS), Lucide.
+
+## Ce qui n'a pas pu être testé ici
+
+L'accès à Supabase (lecture/écriture, connexion par lien magique) n'a été que vérifié par le compilateur : le serveur Supabase ne peut pas tourner dans l'environnement de développement. Le schéma SQL, lui, est testé sur un vrai Postgres (droits, doublons, invitations). La première connexion réelle se fera donc avec votre projet Supabase.

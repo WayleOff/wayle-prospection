@@ -1,26 +1,62 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #faf9f7;
+  --surface: #ffffff;
+  --subtle: #f3f1ed;
+  --border: #e6e2db;
+  --fg: #1c1917;
+  --muted: #6f6a63;
+  --accent: #cf3f17;
+  --accent-fg: #ffffff;
+  --danger: #b91c1c;
+  color-scheme: light;
+}
+.dark {
+  --bg: #0f0e0d;
+  --surface: #171514;
+  --subtle: #1f1c1a;
+  --border: #2d2926;
+  --fg: #f4f1ec;
+  --muted: #a8a29a;
+  --accent: #ff7a4a;
+  --accent-fg: #1a0a03;
+  --danger: #f87171;
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+/* Boîtes de dialogue natives : fond assombri, panneau latéral coulissant */
+dialog { color: var(--fg); }
+dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+dialog.drawer { margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(34rem, 100vw); max-width: 100vw; border: 0; padding: 0; background: var(--surface); border-left: 1px solid var(--border); }
+dialog.drawer[open] { animation: slide-in 0.18s ease-out; }
+dialog.modal { margin: 12vh auto auto; width: min(34rem, calc(100vw - 1.5rem)); border: 1px solid var(--border); border-radius: 1rem; padding: 0; background: var(--surface); box-shadow: 0 20px 50px rgb(0 0 0 / 0.25); }
+dialog.modal[open] { animation: pop-in 0.14s ease-out; }
+@keyframes slide-in { from { transform: translateX(2rem); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pop-in { from { transform: translateY(0.5rem) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { dialog[open] { animation: none !important; } }
+
+/* Notifications : dans la couche supérieure, par-dessus les panneaux ouverts */
+.toasts { position: fixed; inset: auto 0 6rem 0; margin: 0; width: auto; height: auto; border: 0; padding: 0 0.75rem; background: transparent; overflow: visible; color: inherit; }
+.toasts:not(:popover-open) { display: none; }
+@media (min-width: 768px) { .toasts { inset: auto 0 1.5rem 0; } }
