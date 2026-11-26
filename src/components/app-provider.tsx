@@ -8,7 +8,10 @@ import { fmtMoney, mergeCompany, nextNumber, STATUS_LABEL, totals } from "@/lib/
 import { DEFAULT_SCORE_RULES, SCORE_FIELDS, computeScore, mergeRules } from "@/lib/score";
 import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Company, Invoice, InvoiceInput, Logo, Offer, OfferInput, Quote, Stage, QuoteInput, QuoteStatus, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
 
-export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void }
+export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void; /** Message en train de disparaître (fondu de sortie). */ leaving?: boolean }
+
+/** Durée du fondu de sortie d'un message (doit correspondre à `.toast-item` dans globals.css). */
+export const TOAST_FADE_MS = 240;
 
 interface AppCtx {
   ref: Reference;
@@ -23,6 +26,14 @@ interface AppCtx {
   moveStage: (id: string, stageId: string) => Promise<void>;
   setTags: (id: string, tagIds: string[]) => Promise<void>;
   archive: (id: string) => Promise<void>;
+  /** Archive plusieurs fiches d'un coup (un seul message, annulable). */
+  archiveMany: (ids: string[]) => Promise<void>;
+  /** Fiches archivées (chargées à la demande). */
+  listArchived: () => Promise<Prospect[]>;
+  /** Remet des fiches archivées dans la liste principale ; renvoie les fiches restaurées. */
+  restoreMany: (ids: string[]) => Promise<Prospect[]>;
+  /** Suppression définitive (irréversible) de fiches actives ou archivées. */
+  deleteForever: (ids: string[]) => Promise<boolean>;
   addActivity: (id: string, a: { kind: ActivityKind; channel?: Channel | null; body: string | null }) => Promise<Activity | null>;
   listActivities: (id: string) => Promise<Activity[]>;
   deleteActivity: (id: string) => Promise<void>;
@@ -148,24 +159,30 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     return () => { alive = false; };
   }, [repo]);
 
-  const dismissToast = useCallback((id: number) => {
-    setToasts((t) => t.filter((x) => x.id !== id));
-    undoStack.current = undoStack.current.filter((x) => x.id !== id);
+  /** Fait disparaître un message en douceur : on le marque « leaving » (fondu), puis on le retire. */
+  const fadeOut = useCallback((id: number) => {
+    setToasts((l) => l.map((x) => (x.id === id && !x.leaving ? { ...x, leaving: true } : x)));
+    window.setTimeout(() => setToasts((l) => l.filter((x) => x.id !== id)), TOAST_FADE_MS);
   }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    fadeOut(id);
+    undoStack.current = undoStack.current.filter((x) => x.id !== id);
+  }, [fadeOut]);
 
   const toast = useCallback<AppCtx["toast"]>((message, opts) => {
     const t: Toast = { id: nextId.current++, message, kind: opts?.kind ?? "info", undo: opts?.undo };
     setToasts((l) => [...l.slice(-3), t]);
     if (t.undo) undoStack.current = [...undoStack.current.slice(-19), t];
-    window.setTimeout(() => setToasts((l) => l.filter((x) => x.id !== t.id)), t.undo ? 8000 : 4500);
-  }, []);
+    window.setTimeout(() => fadeOut(t.id), t.undo ? 8000 : 4500);
+  }, [fadeOut]);
 
   const undoLast = useCallback(() => {
     const t = undoStack.current.pop();
     if (!t?.undo) return;
-    setToasts((l) => l.filter((x) => x.id !== t.id));
+    fadeOut(t.id);
     void t.undo();
-  }, []);
+  }, [fadeOut]);
 
   const fail = useCallback((e: unknown, what: string) => {
     toast(`${what} : ${e instanceof Error ? e.message : "erreur inconnue"}`, { kind: "error" });
@@ -346,6 +363,48 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
             undo: async () => { try { const back = await repo.updateProspect(id, { archived_at: null }); setProspects((l) => [back, ...l.filter((x) => x.id !== id)]); } catch (e) { fail(e, "Restauration impossible"); } },
           });
         } catch (e) { fail(e, "Archivage impossible"); }
+      },
+      async archiveMany(ids) {
+        const list = ids.map((i) => get(i)).filter((x): x is Prospect => !!x);
+        if (list.length === 0) return;
+        const at = new Date().toISOString();
+        const done: Prospect[] = [];
+        for (const p of list) {
+          try { await repo.updateProspect(p.id, { archived_at: at }); done.push(p); } catch (e) { fail(e, `Archivage de « ${p.name} » impossible`); }
+        }
+        if (done.length === 0) return;
+        const gone = new Set(done.map((p) => p.id));
+        setProspects((l) => l.filter((x) => !gone.has(x.id)));
+        toast(done.length === 1 ? `« ${done[0].name} » archivée` : `${done.length} prospects archivés`, {
+          undo: async () => {
+            const back: Prospect[] = [];
+            for (const p of done) { try { back.push(await repo.updateProspect(p.id, { archived_at: null })); } catch (e) { fail(e, "Restauration impossible"); } }
+            setProspects((l) => [...back, ...l.filter((x) => !gone.has(x.id))]);
+          },
+        });
+      },
+      listArchived: () => repo.listArchivedProspects(),
+      async restoreMany(ids) {
+        const back: Prospect[] = [];
+        for (const id of ids) { try { back.push(await repo.updateProspect(id, { archived_at: null })); } catch (e) { fail(e, "Restauration impossible"); } }
+        if (back.length) {
+          const got = new Set(back.map((p) => p.id));
+          setProspects((l) => [...back, ...l.filter((x) => !got.has(x.id))]);
+          toast(back.length === 1 ? `« ${back[0].name} » restaurée` : `${back.length} prospects restaurés`);
+        }
+        return back;
+      },
+      async deleteForever(ids) {
+        if (ids.length === 0) return true;
+        try { await repo.deleteProspects(ids); } catch (e) { fail(e, "Suppression impossible"); return false; }
+        const gone = new Set(ids);
+        setProspects((l) => l.filter((x) => !gone.has(x.id)));
+        runsRef.current = runsRef.current.filter((r) => !gone.has(r.prospect_id)); setRuns(runsRef.current);
+        quotesRef.current = quotesRef.current.filter((q) => !gone.has(q.prospect_id)); setQuotes(quotesRef.current);
+        invoicesRef.current = invoicesRef.current.map((i) => (i.prospect_id && gone.has(i.prospect_id) ? { ...i, prospect_id: null } : i)); setInvoices(invoicesRef.current);
+        setActivityTick((n) => n + 1);
+        toast(ids.length === 1 ? "Prospect supprimé définitivement" : `${ids.length} prospects supprimés définitivement`);
+        return true;
       },
       addActivity,
       listActivities: (id) => repo.listActivities(id),

@@ -22,10 +22,10 @@ export function Toasts({ scope, owner }: { scope: "page" | "dialog"; owner?: obj
   return (
     <div ref={box} popover="manual" className="toasts pointer-events-none flex flex-col items-center gap-2 px-3" role="status" aria-live="polite">
       {active ? toasts.map((t) => (
-        <div key={t.id} className={`pointer-events-auto flex max-w-md items-center gap-3 rounded-xl border px-4 py-2.5 text-sm shadow-lg ${t.kind === "error" ? "border-danger/40 bg-surface text-danger" : "border-border bg-fg text-bg"}`}>
+        <div key={t.id} data-leaving={t.leaving ? "" : undefined} className={`toast-item pointer-events-auto flex max-w-md items-center gap-3 rounded-xl border px-4 py-2.5 text-sm shadow-lg ${t.kind === "error" ? "border-danger/40 bg-surface text-danger" : "border-border bg-fg text-bg"}`}>
           <span>{t.message}</span>
           {t.undo ? (
-            <button type="button" className="font-semibold underline underline-offset-2" onClick={() => { const u = t.undo; dismissToast(t.id); void u?.(); }}>Annuler</button>
+            <button type="button" className="font-semibold underline underline-offset-2" disabled={t.leaving} onClick={() => { const u = t.undo; dismissToast(t.id); void u?.(); }}>Annuler</button>
           ) : null}
         </div>
       )) : null}

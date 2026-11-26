@@ -8,6 +8,10 @@ export interface Repo {
   mode: "demo" | "supabase";
   reference(): Promise<Reference>;
   listProspects(): Promise<Prospect[]>;
+  /** Fiches archivées (hors de la liste principale), les plus récemment archivées d'abord. */
+  listArchivedProspects(): Promise<Prospect[]>;
+  /** Suppression définitive (historique, messages, devis et parcours de ces fiches compris). Irréversible. */
+  deleteProspects(ids: string[]): Promise<void>;
   /** Enregistre les étapes du pipeline (création, renommage, couleur, type, ordre) ; renvoie la liste à jour, dans l'ordre. */
   saveStages(stages: Stage[]): Promise<Stage[]>;
   /** Supprime une étape après avoir déplacé ses fiches (archivées comprises) vers `moveToId`. */

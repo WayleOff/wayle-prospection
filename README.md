@@ -57,7 +57,8 @@ L'outil ne fabrique pas de factures : il importe celles de Shine pour voir ce qu
 - **Doublons** : un numéro déjà importé est ignoré, on peut donc réimporter un rapport plus récent sans crainte. L'import s'annule avec « Annuler » juste après.
 - **Rattachement** : le nom du client est comparé (sans accents ni forme juridique : SARL, SAS…) à celui des prospects ; un seul prospect identique, et la facture lui est rattachée. Sinon « Associer à un prospect » à la main. Les factures d'un prospect apparaissent sur sa fiche.
 - **Paiement** : « Payée le … » vient de la colonne date de paiement (ou d'une colonne statut) ; un clic sur l'état bascule payée / à encaisser. Un montant négatif est classé « Avoir » et vient en déduction du total facturé.
-- Limite : seul le CSV est lu (pour un .xlsx : Enregistrer sous → CSV dans Excel).
+- **Factures en PDF** : on peut aussi choisir directement les PDF exportés de Shine (plusieurs d'un coup). Le texte est lu **dans le navigateur** (pdf.js, rien n'est envoyé) : numéro, client, dates, HT / TVA / TTC, « payée le… » ; la franchise de TVA (« art. 293 B ») est reconnue. Chaque facture s'affiche en fiche corrigeable avec ses points à vérifier et le texte lu, puis passe par la même vérification (doublons, rattachement) avant l'import. La lecture est une estimation, faute d'avoir pu tester sur de vrais PDF Shine : un PDF scanné (image) n'a pas de texte et se saisit à la main.
+- Limite : pour un .xlsx, Enregistrer sous → CSV dans Excel.
 
 ## Score des prospects
 
@@ -96,6 +97,13 @@ Statistiques → **Exports CSV** : le **bilan des 7 derniers jours** (une ligne 
 ## Menu clic droit
 
 Sur la liste des prospects, le pipeline et « Aujourd'hui », un clic droit sur un prospect ouvre un menu d'actions rapides : ouvrir la fiche, écrire un message, appeler, ouvrir son Instagram, changer d'étape, de température, programmer une relance (demain, +3 j, +7 j, ou la retirer), « Ne pas contacter » et archiver. Sur écran tactile ou au clavier, le bouton « ⋯ » (colonne Actions, ou en haut à droite de chaque carte mobile) ouvre le même menu. Flèches haut/bas pour naviguer, Échap pour fermer. « Supprimer » = archiver : le prospect disparaît des listes et un bouton « Annuler » le restaure aussitôt.
+
+## Sélection multiple, archives et suppression définitive
+
+- **Cases à cocher** dans la liste des prospects (Maj + clic pour une plage, case d'en-tête pour la page, « Tout sélectionner » pour tous les résultats). La sélection ne porte que sur les fiches visibles avec les filtres en cours. Actions groupées : **Archiver** (annulable) ou **Supprimer définitivement** (confirmation, irréversible : historique, messages, devis et parcours de la fiche partent avec elle ; les factures importées restent, détachées).
+- **Archivés** (bouton à côté du titre) : liste des fiches archivées, à **restaurer** ou à supprimer définitivement. Le clic droit propose aussi « Supprimer définitivement… ».
+- **Pages** : 25 / 50 / 100 fiches par page ou « Tous » (choix mémorisé), pour que la liste ne s'allonge pas.
+- Les messages (archivage, annulation…) apparaissent et disparaissent en fondu.
 
 ## Raccourcis
 

@@ -1,11 +1,12 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Archive, Ban, Check, CalendarClock, ChevronDown, ChevronRight, Columns3, ExternalLink, FileText, Flame, MessageSquare, Phone } from "lucide-react";
+import { Archive, Ban, Trash2, Check, CalendarClock, ChevronDown, ChevronRight, Columns3, ExternalLink, FileText, Flame, MessageSquare, Phone } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useApp } from "./app-provider";
 import { MessageComposer } from "./message-composer";
 import { Dot } from "./ui";
+import { ConfirmDialog } from "./confirm-dialog";
 import { HEAT_COLOR, HEAT_LABEL, addDays } from "@/lib/labels";
 import { instagramUrl, telHref } from "@/lib/normalize";
 import type { Heat } from "@/lib/types";
@@ -29,6 +30,9 @@ const WIDTH = 272;
 export function ProspectMenuProvider({ children }: { children: ReactNode }) {
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [composeFor, setComposeFor] = useState<string | null>(null);
+  const [deleteFor, setDeleteFor] = useState<string | null>(null);
+  const { byId, deleteForever } = useApp();
+  const target = deleteFor ? byId(deleteFor) : undefined;
   const close = useCallback(() => setMenu(null), []);
   const api = useMemo<MenuApi>(() => ({
     onContextMenu: (id) => (e) => { e.preventDefault(); e.stopPropagation(); setMenu({ id, x: e.clientX, y: e.clientY }); },
@@ -37,13 +41,18 @@ export function ProspectMenuProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={api}>
       {children}
-      {menu ? <MenuPopup key={`${menu.id}-${menu.x}-${menu.y}`} {...menu} onClose={close} onCompose={(id) => { setMenu(null); setComposeFor(id); }} /> : null}
+      {menu ? <MenuPopup key={`${menu.id}-${menu.x}-${menu.y}`} {...menu} onClose={close} onCompose={(id) => { setMenu(null); setComposeFor(id); }} onDelete={(id) => { setMenu(null); setDeleteFor(id); }} /> : null}
       {composeFor ? <MessageComposer prospectId={composeFor} onClose={() => setComposeFor(null)} /> : null}
+      <ConfirmDialog open={!!deleteFor} title="Supprimer définitivement ?" confirmLabel="Supprimer définitivement" onClose={() => setDeleteFor(null)}
+        onConfirm={() => deleteFor ? deleteForever([deleteFor]) : undefined}>
+        <p>« {target?.name ?? "Ce prospect"} » sera effacé pour de bon, avec son historique, ses messages et ses devis. Cette action ne peut pas être annulée.</p>
+        <p className="mt-2">Pour pouvoir revenir en arrière, utilisez plutôt « Archiver ».</p>
+      </ConfirmDialog>
     </Ctx.Provider>
   );
 }
 
-function MenuPopup({ id, x, y, onClose, onCompose }: { id: string; x: number; y: number; onClose: () => void; onCompose: (id: string) => void }) {
+function MenuPopup({ id, x, y, onClose, onCompose, onDelete }: { id: string; x: number; y: number; onClose: () => void; onCompose: (id: string) => void; onDelete: (id: string) => void }) {
   const { byId, ref, update, moveStage, archive, toast } = useApp();
   const router = useRouter(); const pathname = usePathname(); const sp = useSearchParams();
   const [stagesOpen, setStagesOpen] = useState(false);
@@ -82,7 +91,7 @@ function MenuPopup({ id, x, y, onClose, onCompose }: { id: string; x: number; y:
 
   if (!p) return null;
   const left = Math.max(8, Math.min(x, window.innerWidth - WIDTH - 8));
-  const top = Math.max(8, Math.min(y, window.innerHeight - 500));
+  const top = Math.max(8, Math.min(y, window.innerHeight - 540));
   const stages = [...ref.stages].sort((a, b) => a.position - b.position);
   const run = (f: () => void | Promise<void>) => () => { onClose(); void f(); };
   const openFiche = () => { const qs = new URLSearchParams(sp.toString()); qs.set("fiche", id); router.push(`${pathname}?${qs.toString()}`, { scroll: false }); };
@@ -149,6 +158,7 @@ function MenuPopup({ id, x, y, onClose, onCompose }: { id: string; x: number; y:
         toast(next ? `« ${p.name} » : ne plus contacter` : `« ${p.name} » : de nouveau contactable`, { undo: () => update(id, { do_not_contact: !next }) });
       })}><Ban size={15} aria-hidden /> {p.do_not_contact ? "Autoriser à nouveau le contact" : "Ne pas contacter"}</button>
       <button role="menuitem" type="button" className={`${item} text-danger`} onClick={run(() => archive(id))}><Archive size={15} aria-hidden /> Archiver (annulable)</button>
+      <button role="menuitem" type="button" className={`${item} text-danger`} onClick={run(() => onDelete(id))}><Trash2 size={15} aria-hidden /> Supprimer définitivement…</button>
     </div>,
     document.body,
   );

@@ -5,10 +5,13 @@ import { useApp } from "./app-provider";
 import { Button, CloseButton, Dialog, inputCls } from "./ui";
 import { decodeText, parseCsv } from "@/lib/csv";
 import { INVOICE_FIELDS, buildInvoiceRows, guessInvoiceMapping, type InvoiceFieldKey, type InvoiceMapping } from "@/lib/invoice-import";
+import { PDF_HEADERS, parseInvoiceText, pdfRowCells, type PdfInvoice } from "@/lib/invoice-pdf";
 import { fmtDateFr, fmtMoney } from "@/lib/quote";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_ROWS = 5000;
+const MAX_PDFS = 60;
+const PDF_MAPPING: InvoiceMapping = guessInvoiceMapping([...PDF_HEADERS]);
 
 export function InvoiceImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
@@ -21,16 +24,43 @@ export function InvoiceImportDialog({ open, onClose }: { open: boolean; onClose:
 function ImportForm({ onClose }: { onClose: () => void }) {
   const { prospects, invoices, importInvoices } = useApp();
   const [fileName, setFileName] = useState("");
-  const [table, setTable] = useState<string[][] | null>(null);
-  const [mapping, setMapping] = useState<InvoiceMapping>({});
+  const [csvTable, setTable] = useState<string[][] | null>(null);
+  const [csvMapping, setMapping] = useState<InvoiceMapping>({});
+  const [pdfs, setPdfs] = useState<PdfInvoice[] | null>(null);
+  const [reading, setReading] = useState(false);
+  // En mode PDF, le « tableau » est fabriqué à partir des fiches lues (corrigeables) et passe par le même circuit de vérification.
+  const table = useMemo(() => (pdfs ? [[...PDF_HEADERS], ...pdfs.map(pdfRowCells)] : csvTable), [pdfs, csvTable]);
+  const mapping = pdfs ? PDF_MAPPING : csvMapping;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  const readPdfs = async (files: File[]) => {
+    setError(""); setTable(null); setPdfs(null); setReading(true);
+    try {
+      if (files.length > MAX_PDFS) { setError(`Trop de fichiers d’un coup (${files.length}, ${MAX_PDFS} maximum).`); return; }
+      const { pdfToText } = await import("@/lib/pdf-text");
+      const out: PdfInvoice[] = [];
+      for (const f of files) {
+        if (f.size > MAX_BYTES) { out.push({ ...parseInvoiceText("", f.name), warnings: ["fichier trop gros (8 Mo maximum)"] }); continue; }
+        try {
+          const text = await pdfToText(await f.arrayBuffer());
+          const p = parseInvoiceText(text, f.name);
+          if (!text.trim()) p.warnings.unshift("aucun texte lisible (PDF scanné ou image ?) : à saisir à la main");
+          out.push(p);
+        } catch { out.push({ ...parseInvoiceText("", f.name), warnings: ["PDF illisible (protégé ou abîmé ?)"] }); }
+      }
+      setFileName(files.length === 1 ? files[0].name : `${files.length} fichiers PDF`);
+      setPdfs(out);
+    } catch { setError("Impossible de lire ces PDF. Réessaie, ou utilise l’export .csv."); }
+    finally { setReading(false); }
+  };
+  const editPdf = (i: number, patch: Partial<PdfInvoice>) => setPdfs((l) => (l ?? []).map((p, k) => (k === i ? { ...p, ...patch } : p)));
+
   const readFile = async (f: File) => {
-    setError(""); setTable(null);
+    setError(""); setTable(null); setPdfs(null);
     if (f.size > MAX_BYTES) { setError("Fichier trop gros (8 Mo maximum)."); return; }
-    if (/\.(xlsx?|pdf)$/i.test(f.name)) { setError("Il me faut un fichier .csv. Dans Shine : Rapports → Rapport de ventes → Exporter → .csv. Avec un .xlsx, ouvre-le dans Excel puis Fichier → Enregistrer sous → CSV."); return; }
+    if (/\.xlsx?$/i.test(f.name)) { setError("Il me faut un fichier .csv ou des factures .pdf. Avec un .xlsx, ouvre-le dans Excel puis Fichier → Enregistrer sous → CSV."); return; }
     try {
       const t = parseCsv(decodeText(new Uint8Array(await f.arrayBuffer())));
       if (t.length < 2) { setError("Le fichier ne contient aucune ligne de données (il faut une ligne de titres puis au moins une facture)."); return; }
@@ -78,16 +108,48 @@ function ImportForm({ onClose }: { onClose: () => void }) {
       </div>
       <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
         <div>
-          <p className="text-xs text-muted">Dans Shine : <strong>Rapports → Rapport de ventes → Exporter → .csv</strong>. Un autre logiciel de facturation convient aussi : il suffit d’un CSV avec une ligne de titres. Les factures déjà importées (même numéro) sont ignorées : tu peux réimporter sans crainte.</p>
-          <input ref={fileInput} type="file" accept=".csv,.txt,text/csv" className="sr-only" aria-label="Choisir un fichier"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) void readFile(f); e.target.value = ""; }} />
-          <Button className="mt-3" onClick={() => fileInput.current?.click()}><FileUp size={15} aria-hidden /> {table ? "Choisir un autre fichier" : "Choisir un fichier"}</Button>
-          {fileName ? <span className="ml-2 text-xs text-muted">{fileName} · {table ? table.length - 1 : 0} ligne{table && table.length > 2 ? "s" : ""}</span> : null}
+          <p className="text-xs text-muted">Deux façons : choisis <strong>les factures en PDF</strong> (plusieurs d’un coup, lues dans ton navigateur : rien n’est envoyé nulle part), ou l’export <strong>.csv</strong> de Shine (<em>Rapports → Rapport de ventes → Exporter</em>). Les factures déjà importées (même numéro) sont ignorées : tu peux réimporter sans crainte.</p>
+          <input ref={fileInput} type="file" multiple accept=".csv,.txt,.pdf,text/csv,application/pdf" className="sr-only" aria-label="Choisir un fichier"
+            onChange={(e) => {
+              const files = [...(e.target.files ?? [])];
+              if (files.length && files.every((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf")) void readPdfs(files);
+              else if (files[0]) void readFile(files[0]);
+              e.target.value = "";
+            }} />
+          <Button className="mt-3" onClick={() => fileInput.current?.click()}><FileUp size={15} aria-hidden /> {table ? "Choisir d’autres fichiers" : "Choisir des fichiers"}</Button>
+          {reading ? <span role="status" className="ml-2 text-xs text-muted">Lecture des PDF…</span> : null}
+          {fileName && table ? <span className="ml-2 text-xs text-muted">{fileName} · {table.length - 1} {pdfs ? "facture" : "ligne"}{table.length > 2 ? "s" : ""}</span> : null}
           {error ? <p role="alert" className="mt-2 text-sm text-danger">{error}</p> : null}
         </div>
 
         {table ? (
           <>
+            {pdfs ? (
+              <section aria-labelledby="inv-pdf">
+                <h3 id="inv-pdf" className="text-sm font-semibold">1. Ce que j’ai lu dans les PDF</h3>
+                <p className="mt-1 text-xs text-muted">Vérifie chaque facture et corrige si besoin : la lecture d’un PDF reste une estimation.</p>
+                <ul className="mt-3 space-y-3">
+                  {pdfs.map((p, i) => (
+                    <li key={i} className={`rounded-xl border px-3 py-3 ${p.warnings.length ? "border-amber-500/50" : "border-border"}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="min-w-0 truncate text-xs text-muted" title={p.file}>{p.file}</p>
+                        <button type="button" className="text-xs text-muted underline underline-offset-2 hover:text-fg" onClick={() => setPdfs((l) => (l ?? []).filter((_, k) => k !== i))}>Retirer</button>
+                      </div>
+                      {p.warnings.length ? <p role="note" className="mt-1 text-xs text-amber-700 dark:text-amber-400">À vérifier : {p.warnings.join(" · ")}</p> : null}
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <label className="text-xs text-muted">Numéro<input className={inputCls} value={p.number} onChange={(e) => editPdf(i, { number: e.target.value })} /></label>
+                        <label className="text-xs text-muted">Client<input className={inputCls} value={p.client} onChange={(e) => editPdf(i, { client: e.target.value })} /></label>
+                        <label className="text-xs text-muted">Émise le<input type="date" className={inputCls} value={p.issued} onChange={(e) => editPdf(i, { issued: e.target.value })} /></label>
+                        <label className="text-xs text-muted">Payée le <span className="opacity-70">(vide = non payée)</span><input type="date" className={inputCls} value={p.paid} onChange={(e) => editPdf(i, { paid: e.target.value })} /></label>
+                        <label className="text-xs text-muted">Montant HT<input inputMode="decimal" className={inputCls} value={p.ht} onChange={(e) => editPdf(i, { ht: e.target.value })} /></label>
+                        <label className="text-xs text-muted">Montant TTC<input inputMode="decimal" className={inputCls} value={p.total} onChange={(e) => editPdf(i, { total: e.target.value })} /></label>
+                      </div>
+                      <details className="mt-2 text-xs"><summary className="cursor-pointer text-muted">Texte lu dans le PDF</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-subtle p-2 text-[11px]">{p.text || "(aucun texte)"}</pre></details>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : (
             <section aria-labelledby="inv-map">
               <h3 id="inv-map" className="text-sm font-semibold">1. Correspondance des colonnes</h3>
               <p className="mt-1 text-xs text-muted">J’ai deviné d’après les titres : vérifie, et change ce qui ne va pas.</p>
@@ -107,10 +169,11 @@ function ImportForm({ onClose }: { onClose: () => void }) {
               </ul>
               {!ready ? <p role="alert" className="mt-2 text-sm text-danger">Il faut au moins la colonne du numéro de facture et celle du montant (TTC, ou HT).</p> : null}
             </section>
+            )}
 
             {ready ? (
               <section aria-labelledby="inv-check" className="space-y-3">
-                <h3 id="inv-check" className="text-sm font-semibold">2. Vérification</h3>
+                <h3 id="inv-check" className="text-sm font-semibold">2. Vérification avant import</h3>
                 <p className="text-sm" role="status" data-testid="invoice-import-summary">
                   <strong>{fresh.length}</strong> nouvelle{fresh.length > 1 ? "s" : ""} facture{fresh.length > 1 ? "s" : ""}
                   {dups.length ? <> · <strong>{dups.length}</strong> déjà importée{dups.length > 1 ? "s" : ""}</> : null}

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import { BarChart3, CalendarCheck, CalendarDays, Columns3, Command, Map, MessageSquare, Moon, MoreHorizontal, Package, Plus, Search, Settings, Sun, Users } from "lucide-react";
+import { BarChart3, CalendarCheck, CalendarDays, Columns3, Command, ExternalLink, Map, MessageSquare, Moon, MoreHorizontal, Package, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { AppProvider, useApp } from "./app-provider";
 import { Button } from "./ui";
 import { QuickAdd } from "./quick-add";
@@ -10,6 +10,9 @@ import { CommandPalette } from "./command-palette";
 import { Toasts } from "./toasts";
 import { ProspectSheet } from "./prospect-sheet";
 import { ProspectMenuProvider } from "./prospect-menu";
+
+/** Site vitrine de Wayle Production (s'ouvre dans un nouvel onglet). */
+export const SITE_URL = "https://wayle.fr";
 
 export const NAV = [
   { href: "/aujourdhui", label: "Aujourd'hui", icon: CalendarCheck },
@@ -121,6 +124,9 @@ function Frame({ children }: { children: ReactNode }) {
               <Icon size={17} aria-hidden /> {label}
             </Link>
           ))}
+          <a href={SITE_URL} target="_blank" rel="noopener" className="mt-2 flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm text-muted hover:bg-subtle hover:text-fg">
+            <ExternalLink size={17} aria-hidden /> Accéder au site
+          </a>
         </nav>
         <div className="border-t border-border p-3">
           <div className="flex items-center justify-between">
@@ -170,6 +176,7 @@ function Frame({ children }: { children: ReactNode }) {
             {moreNav.map(({ href, label, icon: Icon }) => (
               <Link key={href} href={href} className="flex h-11 items-center gap-2.5 rounded-lg px-3 text-sm hover:bg-subtle"><Icon size={17} aria-hidden /> {label}</Link>
             ))}
+            <a href={SITE_URL} target="_blank" rel="noopener" className="flex h-11 items-center gap-2.5 rounded-lg px-3 text-sm hover:bg-subtle"><ExternalLink size={17} aria-hidden /> Accéder au site</a>
           </div>
         ) : null}
       </nav>

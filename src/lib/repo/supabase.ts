@@ -82,6 +82,25 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
       return out;
     },
 
+    async listArchivedProspects() {
+      const out: Prospect[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await sb.from("prospects").select("*, prospect_tags(tag_id)")
+          .not("archived_at", "is", null).order("archived_at", { ascending: false }).order("id").range(from, from + PAGE - 1);
+        fail(error);
+        out.push(...(data as Row[]).map(toProspect));
+        if (data.length < PAGE) break;
+      }
+      return out;
+    },
+
+    async deleteProspects(ids) {
+      for (let i = 0; i < ids.length; i += 100) {
+        const { error } = await sb.from("prospects").delete().in("id", ids.slice(i, i + 100));
+        fail(error);
+      }
+    },
+
     async createProspect(input, authorId) {
       const { data, error } = await sb.from("prospects")
         .insert({ owner_id: authorId, ...input, created_by: authorId })

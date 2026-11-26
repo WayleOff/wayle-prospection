@@ -40,7 +40,20 @@ export function createDemoRepo(): Repo {
       for (const p of s.prospects) if (p.stage_id === id) p.stage_id = moveToId;
       s.stages = (s.stages ?? DEMO_REFERENCE.stages).filter((x) => x.id !== id); save();
     },
-    async listProspects() { return structuredClone(load().prospects); },
+    async listProspects() { return structuredClone(load().prospects.filter((p) => !p.archived_at)); },
+    async listArchivedProspects() {
+      return structuredClone(load().prospects.filter((p) => p.archived_at).sort((a, b) => (b.archived_at ?? "").localeCompare(a.archived_at ?? "")));
+    },
+    async deleteProspects(ids) {
+      const s = load(); const gone = new Set(ids);
+      s.prospects = s.prospects.filter((p) => !gone.has(p.id));
+      s.activities = s.activities.filter((a) => !gone.has(a.prospect_id));
+      s.messages = (s.messages ?? []).filter((m) => !gone.has(m.prospect_id));
+      s.runs = (s.runs ?? []).filter((r) => !gone.has(r.prospect_id));
+      s.quotes = (s.quotes ?? []).filter((q) => !gone.has(q.prospect_id));
+      for (const i of s.invoices ?? []) if (i.prospect_id && gone.has(i.prospect_id)) i.prospect_id = null;
+      save();
+    },
     async createProspect(input, authorId) {
       const now = new Date().toISOString();
       const p: Prospect = {

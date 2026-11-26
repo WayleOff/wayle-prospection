@@ -60,3 +60,13 @@ dialog.modal[open] { animation: pop-in 0.14s ease-out; }
 .toasts { position: fixed; inset: auto 0 6rem 0; margin: 0; width: auto; height: auto; border: 0; padding: 0 0.75rem; background: transparent; overflow: visible; color: inherit; }
 .toasts:not(:popover-open) { display: none; }
 @media (min-width: 768px) { .toasts { inset: auto 0 1.5rem 0; } }
+
+/* Messages : fondu à l'apparition et à la disparition */
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes toast-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(4px); } }
+.toast-item { animation: toast-in 240ms ease-out both; }
+.toast-item[data-leaving] { animation: toast-out 240ms ease-in both; }
+@media (prefers-reduced-motion: reduce) {
+  @keyframes toast-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes toast-out { from { opacity: 1; } to { opacity: 0; } }
+}
