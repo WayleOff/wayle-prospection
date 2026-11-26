@@ -1,11 +1,11 @@
-import type { Activity, Goal, Invoice, Offer, Prospect, Quote, ScoreRule, SentMessage, Sequence, SequenceRun, Template } from "../types";
+import type { Activity, Goal, Invoice, Stage, Offer, Prospect, Quote, ScoreRule, SentMessage, Sequence, SequenceRun, Template } from "../types";
 import type { Repo } from "./types";
 import { DEMO_ACTIVITIES, DEMO_REFERENCE, activityDate, demoProspects } from "./demo-data";
 import { starterTemplates } from "../message";
 import { normalizeSteps } from "../sequence";
 
 const KEY = "wayle-prospection-demo-v1";
-interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[]; sequences?: Sequence[]; runs?: SequenceRun[]; scoreRules?: ScoreRule[]; batches?: Record<string, string[]>; offers?: Offer[]; quotes?: Quote[]; settings?: Record<string, unknown>; invoices?: Invoice[]; invoiceBatches?: Record<string, string[]> }
+interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[]; sequences?: Sequence[]; runs?: SequenceRun[]; scoreRules?: ScoreRule[]; batches?: Record<string, string[]>; offers?: Offer[]; quotes?: Quote[]; settings?: Record<string, unknown>; invoices?: Invoice[]; invoiceBatches?: Record<string, string[]>; stages?: Stage[] }
 
 const uid = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
@@ -33,7 +33,13 @@ export function createDemoRepo(): Repo {
 
   return {
     mode: "demo",
-    async reference() { return DEMO_REFERENCE; },
+    async reference() { return { ...DEMO_REFERENCE, stages: structuredClone(load().stages ?? DEMO_REFERENCE.stages) }; },
+    async saveStages(stages) { const s = load(); s.stages = structuredClone(stages).sort((a, b) => a.position - b.position); save(); return structuredClone(s.stages); },
+    async deleteStage(id, moveToId) {
+      const s = load();
+      for (const p of s.prospects) if (p.stage_id === id) p.stage_id = moveToId;
+      s.stages = (s.stages ?? DEMO_REFERENCE.stages).filter((x) => x.id !== id); save();
+    },
     async listProspects() { return structuredClone(load().prospects); },
     async createProspect(input, authorId) {
       const now = new Date().toISOString();

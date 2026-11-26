@@ -1,17 +1,17 @@
 # Wayle · Prospection
 
-Outil de prospection de Wayle Production (vidéaste, Rouen), pensé comme un petit CRM : fiches prospects, pipeline, relances, messages générés avec Claude, offres et devis.
+Outil de prospection de Wayle Production (vidéaste, Rouen), pensé comme un petit CRM : fiches prospects, pipeline, relances, messages générés avec Claude, offres, devis, factures importées, carte, calendrier et statistiques.
 Interface en français, utilisable sur ordinateur et sur téléphone.
 
-**État : étape (f).**
+**État : toutes les étapes (a) à (g) sont faites.**
 - (a) Connexion, fiches prospects, liste filtrable, ajout rapide avec détection de doublons, historique, barre de commande (Ctrl/Cmd + K).
 - (b) « Aujourd'hui » (actions du jour, indicateurs, objectif du mois) et pipeline en colonnes (glisser-déposer, clavier, filtres).
 - (c) Générateur de messages : modèles par canal, ton et catégorie, réécriture par Claude (3 variantes), « Copier et marquer comme envoyé » (historique, relance à J+3).
 - (d) Séquences de relance : suites d'étapes configurables (ex. J0 message → J+3 relance → J+7 visite ou appel → J+14 dernier message), programmées automatiquement dans « Aujourd'hui », arrêtées dès que le prospect répond.
 - (e) Import CSV et export Notion (correspondance des colonnes, aperçu, doublons, annulation) et score automatique de 0 à 100 avec critères réglables.
 - (f) Offres (catalogue) et devis : numérotation D-AAAA-NNN, lignes ponctuelles ou mensuelles, PDF A4, états brouillon / envoyé / accepté / refusé.
-
-Les écrans Carte, Offres et Statistiques affichent « Pas encore construit » et seront ajoutés étape par étape.
+- (f+) Acomptes sur les devis, logo sur le PDF, import des factures Shine.
+- (g) Statistiques, carte (Leaflet), calendrier, colonnes du pipeline modifiables, exports CSV.
 
 ## Essayer tout de suite (sans compte)
 
@@ -63,6 +63,36 @@ L'outil ne fabrique pas de factures : il importe celles de Shine pour voir ce qu
 
 Chaque fiche a un score de 0 à 100, recalculé automatiquement à chaque modification de la fiche (survol de « Score » : détail critère par critère). Critères de départ, réglables dans Paramètres → Score des prospects (activer, poids ; le total est ramené à 100) : ouverture récente (N mois réglable), Instagram faible ou inactif, établissement indépendant, catégorie prioritaire, joignable directement. Enregistrer les critères recalcule toutes les fiches.
 
+## Statistiques
+
+Page **Statistiques**, avec un sélecteur de période (30 jours, 90 jours, 12 mois) pour les taux de réponse :
+- **Chiffres clés** : prospects en cours, taux de conversion (gagnés ÷ gagnés + perdus), contacts de la période, devis envoyés en attente (et leur montant).
+- **Où en sont les prospects** (fiches par étape), **activité par semaine** (messages, appels, visites sur 8 semaines).
+- **Réponses par canal** et **par catégorie** : part des prospects contactés qui ont répondu (entre parenthèses, le nombre de prospects contactés ; le survol donne « x réponses sur y »). Une réponse compte si elle suit le premier contact. Sur peu de prospects, un pourcentage ne veut pas dire grand-chose : regarder le nombre entre parenthèses.
+- **Délais** (médiane) : fiche créée → premier contact, premier contact → réponse.
+- **Encaissé par mois** : factures payées importées de Shine, avoirs déduits (voir Factures).
+- **D'où viennent les prospects** (champ Source) et **Pourquoi on perd** (motif de perte).
+- Chaque graphique a sa version « Voir en tableau ».
+- Les chiffres se calculent à partir de l'historique de l'année écoulée ; une action faite hors de l'outil n'y figure pas.
+
+## Carte
+
+Page **Carte** : une pastille par prospect, de la couleur de son étape ; un clic ouvre la fiche. Filtres par catégorie, par étape, ou « Action prévue cette semaine ». Fond de carte OpenStreetMap.
+- Les fiches qui ont une adresse mais pas de position se placent avec **Localiser les adresses** : les adresses sont envoyées à la Base Adresse Nationale (api-adresse.data.gouv.fr, service public gratuit, sans clé). Un résultat peu sûr (score < 0,5) est laissé de côté. Une fiche sans adresse ne peut pas être placée.
+- Les fiches importées ou créées plus tard sont à localiser de la même façon (le bouton réapparaît).
+
+## Calendrier
+
+Page **Calendrier** : vue mois (lundi en premier). Chaque jour affiche les relances prévues sur les fiches en cours et l'échéance des devis envoyés. Un clic sur un jour détaille ses éléments à droite : ouvrir la fiche, ou **Reporter au** une autre date (change la prochaine action de la fiche). Les relances en retard sont en rouge. Les prospects archivés, « ne pas contacter », gagnés ou perdus n'y figurent pas.
+
+## Colonnes du pipeline
+
+Paramètres → **Colonnes du pipeline** : ajouter, renommer, recolorer, réordonner (flèches), changer le type (En cours / Gagné / Perdu). Il faut toujours au moins une étape de chaque type, sans nom en double. Supprimer une étape demande où déplacer ses fiches. Deux chiffres de « Aujourd'hui » cherchent un mot dans le nom des étapes : « RDV » ou « tournage » (rendez-vous du mois) et « reel » (reels du mois) ; l'écran prévient si un renommage les fait disparaître. Les séquences s'arrêtent à partir de la 3e étape « En cours » (« Répondu » au départ) : déplacer les étapes change ce point d'arrêt.
+
+## Exports CSV
+
+Statistiques → **Exports CSV** : le **bilan des 7 derniers jours** (une ligne par action : date, prospect, type, canal, détail) et **tous les prospects** (une ligne par fiche, tous les champs). Fichiers CSV (séparateur « ; », accents lus par Excel), créés dans le navigateur. C'est le filet de sécurité conseillé : un export par semaine, à ranger dans un dossier. Il n'est pas automatique (l'outil ne tourne pas en tâche de fond).
+
 ## Raccourcis
 
 | Touche | Action |
@@ -77,7 +107,7 @@ Chaque fiche a un score de 0 à 100, recalculé automatiquement à chaque modifi
 
 ## Mise en service (vraies données)
 
-1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, `supabase/migrations/20261127000000_sequences.sql` (séquences) `supabase/migrations/20261128000000_quotes.sql` (devis) et `supabase/migrations/20261129000000_invoices_deposits.sql` (acomptes et factures) — ces trois dernières sont à exécuter aussi sur un projet existant —, puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
+1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, `supabase/migrations/20261127000000_sequences.sql` (séquences), `supabase/migrations/20261128000000_quotes.sql` (devis) et `supabase/migrations/20261129000000_invoices_deposits.sql` (acomptes et factures) — ces trois dernières sont à exécuter aussi sur un projet existant —, puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
 2. **Invitations** — dans l'éditeur SQL, *avant* d'inviter quiconque :
    `insert into team_invites (email) values ('vous@exemple.fr');` (en minuscules). Seules les adresses listées obtiennent un profil ; le prénom affiché est tiré de l'adresse et modifiable dans la table `profiles`.
    Puis, pour chaque personne, créer son compte dans Authentication → Users → *Add user* → *Create new user* (cocher *Auto Confirm User*, mot de passe aléatoire jamais utilisé). Le lien de connexion ne crée jamais de compte : sans cette étape, l'adresse est refusée (« n'est pas invitée »).
@@ -86,7 +116,7 @@ Chaque fiche a un score de 0 à 100, recalculé automatiquement à chaque modifi
    `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink` (et `type=invite` pour l'invitation).
 5. **Vercel** — importer le dépôt GitHub, ajouter `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Project Settings → API), déployer.
 6. **Claude (facultatif, pour « Réécrire avec Claude »)** : sans clé, « Brief pour Claude » copie la fiche et les consignes à coller dans l’application Claude (abonnement), puis « Coller la réponse de Claude » récupère les variantes. Avec clé : créer une clé sur console.anthropic.com (API Keys), puis dans Vercel : Settings → Environment Variables → `ANTHROPIC_API_KEY` (cocher Production), et redéployer. La clé n'est jamais envoyée au navigateur : seul le serveur l'utilise, pour les comptes connectés. Sans clé, les modèles restent utilisables. `ANTHROPIC_MODEL` permet de changer de modèle (par défaut `claude-sonnet-5-5`). Chaque réécriture coûte quelques centimes au plus ; fixer une limite de dépense dans la console Anthropic.
-7. **Sauvegarde** — le plan gratuit de Supabase met le projet en pause après une semaine sans activité et n'inclut pas de sauvegardes téléchargeables : l'export CSV hebdomadaire (étape ultérieure) sert de filet de sécurité.
+7. **Sauvegarde** — le plan gratuit de Supabase met le projet en pause après une semaine sans activité et n'inclut pas de sauvegardes téléchargeables : l'export CSV hebdomadaire (Statistiques → Exports CSV) sert de filet de sécurité : le faire une fois par semaine.
 
 Les clés secrètes (service role, clé Anthropic) ne doivent jamais être dans le dépôt, ni dans une variable commençant par `NEXT_PUBLIC_`.
 
@@ -106,10 +136,12 @@ npm run lint
 npm run test:sql    # tests du schéma sur un Postgres local (nécessite PostgreSQL 16 installé)
 ```
 
-Structure : `src/lib` (logique pure et accès aux données, `repo/` = Supabase ou démo), `src/components` (coque, fiche, ajout rapide, barre de commande), `src/app` (pages), `supabase/` (schéma, données de départ, tests SQL).
+Structure : `src/lib` (logique pure et accès aux données, `repo/` = Supabase ou démo ; `insights.ts` statistiques, `calendar.ts`, `export.ts`, `geocode.ts`, `stages.ts`), `src/components` (coque, fiche, ajout rapide, barre de commande, graphiques, carte), `src/app` (pages), `supabase/` (schéma, données de départ, tests SQL).
 
-Pile : Next.js (App Router), React, TypeScript, Tailwind CSS, Supabase (Postgres, authentification par lien magique, RLS), Lucide.
+Pile : Next.js (App Router), React, TypeScript, Tailwind CSS, Supabase (Postgres, authentification par lien magique, RLS), Leaflet (carte), pdf-lib (devis), Lucide.
 
 ## Ce qui n'a pas pu être testé ici
 
-L'accès à Supabase (lecture/écriture, connexion par lien magique) n'a été que vérifié par le compilateur : le serveur Supabase ne peut pas tourner dans l'environnement de développement. Le schéma SQL, lui, est testé sur un vrai Postgres (droits, doublons, invitations). La première connexion réelle se fera donc avec votre projet Supabase.
+L'accès à Supabase (lecture/écriture, connexion par lien magique) n'a été que vérifié par le compilateur : le serveur Supabase ne peut pas tourner dans l'environnement de développement. Le schéma SQL, lui, est testé sur un vrai Postgres (droits, doublons, invitations, devis, factures). La première connexion réelle se fera donc avec votre projet Supabase.
+
+De même, les appels à des services extérieurs n'ont pas pu être essayés pour de vrai : les tuiles OpenStreetMap de la carte, la Base Adresse Nationale (testée avec une réponse simulée), et l'export CSV réel de Shine (titres de colonnes inconnus d'avance : la correspondance se vérifie à l'écran).

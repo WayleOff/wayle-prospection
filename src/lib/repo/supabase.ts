@@ -57,6 +57,19 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
       };
     },
 
+    async saveStages(stages) {
+      const { data, error } = await sb.from("stages").upsert(stages.map(({ id, name, position, kind, color }) => ({ id, name, position, kind, color })), { onConflict: "id" }).select("*");
+      fail(error);
+      return (data as Stage[]).sort((a, b) => a.position - b.position);
+    },
+
+    async deleteStage(id, moveToId) {
+      const moved = await sb.from("prospects").update({ stage_id: moveToId }).eq("stage_id", id);
+      fail(moved.error);
+      const { error } = await sb.from("stages").delete().eq("id", id);
+      fail(error);
+    },
+
     async listProspects() {
       const out: Prospect[] = [];
       for (let from = 0; ; from += PAGE) {

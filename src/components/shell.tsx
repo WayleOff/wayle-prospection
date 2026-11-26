@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import { BarChart3, CalendarCheck, Columns3, Command, Map, MessageSquare, Moon, MoreHorizontal, Package, Plus, Search, Settings, Sun, Users } from "lucide-react";
+import { BarChart3, CalendarCheck, CalendarDays, Columns3, Command, Map, MessageSquare, Moon, MoreHorizontal, Package, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { AppProvider, useApp } from "./app-provider";
 import { Button } from "./ui";
 import { QuickAdd } from "./quick-add";
@@ -15,6 +15,7 @@ export const NAV = [
   { href: "/pipeline", label: "Pipeline", icon: Columns3 },
   { href: "/prospects", label: "Prospects", icon: Users },
   { href: "/carte", label: "Carte", icon: Map },
+  { href: "/calendrier", label: "Calendrier", icon: CalendarDays },
   { href: "/messages", label: "Messages", icon: MessageSquare },
   { href: "/offres", label: "Offres", icon: Package },
   { href: "/statistiques", label: "Statistiques", icon: BarChart3 },

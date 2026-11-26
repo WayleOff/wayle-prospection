@@ -1,4 +1,4 @@
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, SentMessage, Sequence, SequenceInput, Invoice, InvoiceInput, Offer, OfferInput, Quote, ScoreRule, SequenceRun, Template, TemplateInput } from "../types";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, Stage, SentMessage, Sequence, SequenceInput, Invoice, InvoiceInput, Offer, OfferInput, Quote, ScoreRule, SequenceRun, Template, TemplateInput } from "../types";
 
 /**
  * Accès aux données. Deux implémentations : Supabase (production) et mémoire (mode démonstration,
@@ -8,6 +8,10 @@ export interface Repo {
   mode: "demo" | "supabase";
   reference(): Promise<Reference>;
   listProspects(): Promise<Prospect[]>;
+  /** Enregistre les étapes du pipeline (création, renommage, couleur, type, ordre) ; renvoie la liste à jour, dans l'ordre. */
+  saveStages(stages: Stage[]): Promise<Stage[]>;
+  /** Supprime une étape après avoir déplacé ses fiches (archivées comprises) vers `moveToId`. */
+  deleteStage(id: string, moveToId: string): Promise<void>;
   createProspect(input: ProspectInput, authorId: string | null): Promise<Prospect>;
   updateProspect(id: string, patch: ProspectPatch): Promise<Prospect>;
   setTags(id: string, tagIds: string[]): Promise<void>;

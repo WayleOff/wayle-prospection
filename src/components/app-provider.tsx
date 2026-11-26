@@ -6,7 +6,7 @@ import { isMessageAction, planAfter, planStart, progressOf, stageStopsSequence, 
 import { RELANCE_DAYS } from "@/lib/message";
 import { fmtMoney, mergeCompany, nextNumber, STATUS_LABEL, totals } from "@/lib/quote";
 import { DEFAULT_SCORE_RULES, SCORE_FIELDS, computeScore, mergeRules } from "@/lib/score";
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Company, Invoice, InvoiceInput, Logo, Offer, OfferInput, Quote, QuoteInput, QuoteStatus, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Company, Invoice, InvoiceInput, Logo, Offer, OfferInput, Quote, Stage, QuoteInput, QuoteStatus, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
 
 export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void }
 
@@ -62,6 +62,8 @@ interface AppCtx {
   deleteQuote: (id: string) => Promise<boolean>;
   company: Company;
   saveCompany: (c: Company) => Promise<boolean>;
+  saveStages: (stages: Stage[]) => Promise<boolean>;
+  deleteStage: (id: string, moveToId: string) => Promise<boolean>;
   logo: Logo | null;
   saveLogo: (l: Logo | null) => Promise<boolean>;
   invoices: Invoice[];
@@ -473,6 +475,21 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       async saveCompany(c) {
         try { await repo.setSetting("company", c); setCompany(c); return true; }
         catch (e) { fail(e, "Coordonnées non enregistrées"); return false; }
+      },
+      async saveStages(list) {
+        try {
+          const saved = await repo.saveStages(list);
+          setState((st) => (st.status === "ready" ? { status: "ready", ref: { ...st.ref, stages: saved } } : st));
+          return true;
+        } catch (e) { fail(e, "Étapes non enregistrées"); return false; }
+      },
+      async deleteStage(id, moveToId) {
+        try {
+          await repo.deleteStage(id, moveToId);
+          setState((st) => (st.status === "ready" ? { status: "ready", ref: { ...st.ref, stages: st.ref.stages.filter((x) => x.id !== id) } } : st));
+          setProspects((l) => l.map((p) => (p.stage_id === id ? { ...p, stage_id: moveToId } : p)));
+          return true;
+        } catch (e) { fail(e, "Suppression impossible"); return false; }
       },
       logo,
       async saveLogo(l) {

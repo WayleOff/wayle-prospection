@@ -5,6 +5,7 @@ import { useApp } from "@/components/app-provider";
 import { Button } from "@/components/ui";
 import { ScoreSettings } from "@/components/score-settings";
 import { CompanySettings } from "@/components/company-settings";
+import { PipelineSettings } from "@/components/pipeline-settings";
 
 export default function Page() {
   const { ref, mode, signOut, prospects } = useApp();
@@ -34,9 +35,9 @@ export default function Page() {
         </p>
         <p className="mt-2 text-xs text-muted">La clé reste côté serveur : elle se règle dans Vercel (Settings → Environment Variables → <code>ANTHROPIC_API_KEY</code>), puis un redéploiement. Le détail est dans le README.</p>
       </section>
+      <PipelineSettings />
       <CompanySettings />
       <ScoreSettings />
-      <p className="text-sm text-muted">Les réglages des séquences, des offres et des colonnes du pipeline s’ajouteront avec les étapes correspondantes.</p>
     </div>
   );
 }
