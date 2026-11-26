@@ -7,6 +7,7 @@ import { CHANNEL_LABEL } from "@/lib/labels";
 import { buildBrief, parsePastedVariants } from "@/lib/ai/brief";
 import type { GenerateInput } from "@/lib/ai/generate";
 import { OFFERS, detailFrom, fillTemplate, pickTemplate, type OfferId } from "@/lib/message";
+import { isMessageAction, stepText } from "@/lib/sequence";
 import { instagramUrl, telHref } from "@/lib/normalize";
 import type { Channel, Prospect, Template, Tone } from "@/lib/types";
 
@@ -50,12 +51,15 @@ export function MessageComposer({ prospectId, onClose }: { prospectId: string; o
 }
 
 function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
-  const { ref, listTemplates, listActivities, update, sendMessage, toast } = useApp();
+  const { ref, listTemplates, listActivities, update, sendMessage, toast, sequences, runFor } = useApp();
+  const rf = runFor(p.id);
+  // Étape de séquence à faire (message) : elle choisit le canal et le modèle par défaut.
+  const step = rf?.step && isMessageAction(rf.step.action) ? rf.step : null;
   const category = ref.categories.find((c) => c.id === p.category_id) ?? null;
   const firstOpen = ref.stages.filter((s) => s.kind === "open").sort((a, b) => a.position - b.position)[0];
 
   const [templates, setTemplates] = useState<Template[] | null>(null);
-  const [channel, setChannel] = useState<Channel>(p.preferred_channel ?? "instagram");
+  const [channel, setChannel] = useState<Channel>(step?.channel ?? p.preferred_channel ?? "instagram");
   const [tone, setTone] = useState<Tone>(category?.default_tone ?? "tu");
   const [offer, setOffer] = useState<OfferId>("reel");
   const [templateId, setTemplateId] = useState<string | null>(null);
@@ -67,6 +71,9 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [paste, setPaste] = useState<string | null>(null);
+  const activeSeqs = sequences.filter((q) => q.is_active && q.steps.length > 0);
+  // Premier contact et séquence disponible : on propose de la lancer ; sinon relance simple.
+  const [sequenceId, setSequenceId] = useState<string | null>(!rf && p.stage_id === firstOpen?.id ? (activeSeqs[0]?.id ?? null) : null);
   const abort = useRef<AbortController | null>(null);
   const contactedRef = useRef(p.stage_id !== firstOpen?.id);
 
@@ -89,7 +96,8 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
       if (!alive) return;
       if (acts.some((a) => a.kind === "message")) contactedRef.current = true;
       setTemplates(list);
-      const t = pickTemplate(list, { channel, tone, categoryId: p.category_id, contacted: contactedRef.current });
+      const fromStep = step?.template_id ? list.find((x) => x.id === step.template_id && x.channel === channel) ?? null : null;
+      const t = fromStep ?? pickTemplate(list, { channel, tone, categoryId: p.category_id, contacted: contactedRef.current, label: step?.label });
       setTemplateId(t?.id ?? null);
       const r = fillTemplate(t?.body ?? "", { prospect: p, offer: OFFERS[0].label, detail: detailFrom(p.highlights) });
       setVariants([{ text: r.text, ai: false }]);
@@ -101,7 +109,7 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
   }, []);
 
   const choose = (c: Channel, t: Tone) => {
-    const next = pickTemplate(templates ?? [], { channel: c, tone: t, categoryId: p.category_id, contacted: contactedRef.current });
+    const next = pickTemplate(templates ?? [], { channel: c, tone: t, categoryId: p.category_id, contacted: contactedRef.current, label: step?.label });
     setTemplateId(next?.id ?? null);
     fill(next, { tone: t });
   };
@@ -164,7 +172,7 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
     if (p.do_not_contact) return;
     setBusy("send");
     await copyText(current);
-    const ok = await sendMessage(p.id, { template_id: templateId, channel, variant: active + 1, body: current.trim(), written_by_ai: !!variants[active]?.ai });
+    const ok = await sendMessage(p.id, { template_id: templateId, channel, variant: active + 1, body: current.trim(), written_by_ai: !!variants[active]?.ai }, { sequenceId });
     setBusy(null);
     if (ok) onClose();
   };
@@ -264,6 +272,17 @@ function Composer({ p, onClose }: { p: Prospect; onClose: () => void }) {
         </div>
       </div>
 
+      {rf ? (
+        <p className="border-t border-border px-5 py-2.5 text-xs text-muted">Séquence « {rf.seq.name} » en cours ({rf.index}/{rf.total}){rf.step ? ` : ${stepText(rf.step)}` : ""}. Après l’envoi, l’étape suivante est programmée.</p>
+      ) : activeSeqs.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-2.5">
+          <label htmlFor="mc-seq" className="text-xs font-medium text-muted">Après l’envoi</label>
+          <select id="mc-seq" className={`${inputCls} !w-auto min-w-0 flex-1`} value={sequenceId ?? ""} onChange={(e) => setSequenceId(e.target.value || null)}>
+            <option value="">Une relance simple dans 3 jours</option>
+            {activeSeqs.map((q) => <option key={q.id} value={q.id}>Lancer la séquence « {q.name} »</option>)}
+          </select>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-3">
         {link ? <a href={link.href} target="_blank" rel="noopener noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-surface px-3.5 text-sm font-medium hover:bg-subtle"><ExternalLink size={15} aria-hidden /> {link.label}</a> : null}
         <Button onClick={() => void copy()} disabled={!current.trim()}>{copied ? <ClipboardCheck size={15} aria-hidden /> : <Copy size={15} aria-hidden />} Copier</Button>

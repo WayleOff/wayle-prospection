@@ -1,10 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Activity, Category, Goal, Profile, Prospect, Reference, SentMessage, Stage, Tag, Template } from "../types";
+import type { Activity, Category, Goal, Profile, Prospect, Reference, SentMessage, Sequence, SequenceRun, SequenceStep, Stage, Tag, Template } from "../types";
+import { normalizeSteps } from "../sequence";
 import type { Repo } from "./types";
 
 type Row = Record<string, unknown> & { id: string; prospect_tags?: { tag_id: string }[] };
 
 const MESSAGE_COLS = "id, prospect_id, template_id, channel, variant, body, written_by_ai, sent_at, author_id, created_at";
+const STEP_COLS = "id, step_no, day_offset, action, channel, template_id, label";
+const RUN_COLS = "id, prospect_id, sequence_id, current_step, status, started_at";
+type SeqRow = { id: string; name: string; is_active: boolean; sequence_steps: (Omit<SequenceStep, "label"> & { label: string | null })[] };
+const toSequence = (r: SeqRow): Sequence => ({
+  id: r.id, name: r.name, is_active: r.is_active,
+  steps: [...(r.sequence_steps ?? [])].sort((a, b) => a.step_no - b.step_no).map((s) => ({ ...s, label: s.label ?? "" })),
+});
 const PAGE = 1000; // limite de lignes par requête de l'API Supabase
 
 /** Colonnes techniques de la base qui n'existent pas côté application. */
@@ -155,6 +163,59 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
       const { data, error } = await sb.from("messages").select(MESSAGE_COLS).order("created_at", { ascending: false }).limit(limit);
       fail(error);
       return data as SentMessage[];
+    },
+
+    async listSequences() {
+      const { data, error } = await sb.from("sequences").select(`id, name, is_active, sequence_steps(${STEP_COLS})`).order("name");
+      fail(error);
+      return (data as unknown as SeqRow[]).map(toSequence);
+    },
+
+    async saveSequence(input) {
+      const row = { name: input.name, is_active: input.is_active };
+      const q = input.id ? sb.from("sequences").update(row).eq("id", input.id) : sb.from("sequences").insert(row);
+      const { data, error } = await q.select("id, name, is_active").single();
+      fail(error);
+      const seq = data as { id: string; name: string; is_active: boolean };
+      const steps = normalizeSteps(input.steps);
+      const del = await sb.from("sequence_steps").delete().eq("sequence_id", seq.id);
+      fail(del.error);
+      if (steps.length) {
+        const ins = await sb.from("sequence_steps").insert(steps.map((s) => ({
+          sequence_id: seq.id, step_no: s.step_no, day_offset: s.day_offset, action: s.action, channel: s.channel, template_id: s.template_id, label: s.label,
+        }))).select(STEP_COLS);
+        fail(ins.error);
+        return toSequence({ ...seq, sequence_steps: ins.data as SeqRow["sequence_steps"] });
+      }
+      return { ...seq, steps: [] };
+    },
+
+    async deleteSequence(id) {
+      const { error } = await sb.from("sequences").delete().eq("id", id);
+      fail(error);
+    },
+
+    async listRuns() {
+      const { data, error } = await sb.from("sequence_runs").select(RUN_COLS).eq("status", "running");
+      fail(error);
+      return data as SequenceRun[];
+    },
+
+    async createRun(r) {
+      const { data, error } = await sb.from("sequence_runs").insert({ ...r, status: "running" }).select(RUN_COLS).single();
+      fail(error);
+      return data as SequenceRun;
+    },
+
+    async updateRun(id, patch) {
+      const { data, error } = await sb.from("sequence_runs").update(patch).eq("id", id).select(RUN_COLS).single();
+      fail(error);
+      return data as SequenceRun;
+    },
+
+    async deleteRun(id) {
+      const { error } = await sb.from("sequence_runs").delete().eq("id", id);
+      fail(error);
     },
 
     async signOut() { await sb.auth.signOut(); },

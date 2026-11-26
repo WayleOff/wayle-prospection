@@ -1,9 +1,10 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getRepo } from "@/lib/repo";
-import { addDays } from "@/lib/labels";
+import { addDays, today as todayStr } from "@/lib/labels";
+import { isMessageAction, planAfter, planStart, progressOf, stageStopsSequence, stepByNo } from "@/lib/sequence";
 import { RELANCE_DAYS } from "@/lib/message";
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, SentMessage, Template, TemplateInput } from "@/lib/types";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
 
 export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void }
 
@@ -31,7 +32,20 @@ interface AppCtx {
   deleteTemplate: (id: string) => Promise<boolean>;
   listMessages: (limit: number) => Promise<SentMessage[]>;
   /** « Marquer comme envoyé » : journalise le message, programme la relance et passe un premier contact à l'étape suivante. */
-  sendMessage: (prospectId: string, m: Omit<MessageInput, "prospect_id">) => Promise<boolean>;
+  sendMessage: (prospectId: string, m: Omit<MessageInput, "prospect_id">, opts?: { sequenceId?: string | null }) => Promise<boolean>;
+  sequences: Sequence[];
+  /** Parcours en cours (un par prospect au plus). */
+  runs: SequenceRun[];
+  /** Faux tant que la migration SQL de l'étape d n'a pas été appliquée à la base. */
+  sequencesReady: boolean;
+  /** Séquence en cours d'un prospect : étape à faire, position (« 2/4 »). */
+  runFor: (prospectId: string) => { run: SequenceRun; seq: Sequence; step: SequenceStep | null; index: number; total: number } | null;
+  saveSequence: (s: SequenceInput) => Promise<Sequence | null>;
+  deleteSequence: (id: string) => Promise<boolean>;
+  startSequence: (prospectId: string, sequenceId: string, opts?: { firstDone?: boolean }) => Promise<boolean>;
+  /** L'étape en cours est faite : programme la suivante (ou termine). Renvoie l'annulation. */
+  completeStep: (prospectId: string) => Promise<(() => Promise<void>) | null>;
+  stopSequence: (prospectId: string, status?: RunStatus) => Promise<void>;
   signOut: () => Promise<void>;
   toasts: Toast[];
   toast: (message: string, opts?: { undo?: Toast["undo"]; kind?: Toast["kind"] }) => void;
@@ -66,6 +80,11 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const [paletteOpen, setPaletteOpen] = useState(false);
   const undoStack = useRef<Toast[]>([]);
   const nextId = useRef(1);
+  const [sequences, setSequences] = useState<Sequence[]>([]);
+  const [runs, setRuns] = useState<SequenceRun[]>([]);
+  const [sequencesReady, setSequencesReady] = useState(false);
+  const sequencesRef = useRef<Sequence[]>([]);
+  const runsRef = useRef<SequenceRun[]>([]);
   const prospectsRef = useRef<Prospect[]>([]);
   useEffect(() => { prospectsRef.current = prospects; }, [prospects]);
 
@@ -112,22 +131,106 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const ready = state.status === "ready" ? state.ref : null;
   const meId = ready?.me?.id ?? null;
 
+  // Séquences : chargées à part pour que l'application reste utilisable si la migration SQL de l'étape d n'est pas encore appliquée.
+  useEffect(() => {
+    if (!ready) return;
+    let alive = true;
+    Promise.all([repo.listSequences(), repo.listRuns()])
+      .then(([sq, rn]) => { if (!alive) return; sequencesRef.current = sq; runsRef.current = rn; setSequences(sq); setRuns(rn); setSequencesReady(true); })
+      .catch(() => { if (alive) setSequencesReady(false); });
+    return () => { alive = false; };
+  }, [ready, repo]);
+
   const api = useMemo<AppCtx | null>(() => {
     if (!ready) return null;
     const get = (id: string) => prospectsRef.current.find((p) => p.id === id);
+
+    const runOf = (pid: string) => runsRef.current.find((r) => r.prospect_id === pid) ?? null;
+    const seqOf = (id: string) => sequencesRef.current.find((q) => q.id === id) ?? null;
+    const setRunList = (fn: (l: SequenceRun[]) => SequenceRun[]) => { runsRef.current = fn(runsRef.current); setRuns(runsRef.current); };
+    const setSeqList = (fn: (l: Sequence[]) => Sequence[]) => { sequencesRef.current = fn(sequencesRef.current); setSequences(sequencesRef.current); };
 
     const update: AppCtx["update"] = async (id, patch) => {
       const before = get(id);
       if (!before) return;
       setProspects((l) => l.map((x) => (x.id === id ? { ...x, ...patch } : x))); // affichage immédiat
       try { replace(await repo.updateProspect(id, patch)); }
-      catch (e) { replace(before); fail(e, "Enregistrement impossible"); }
+      catch (e) { replace(before); fail(e, "Enregistrement impossible"); return; }
+      // Une réponse (étape « Répondu » ou au-delà) ou « Ne pas contacter » arrête la séquence en cours.
+      if (runOf(id) && ((patch.stage_id && stageStopsSequence(ready.stages, patch.stage_id)) || patch.do_not_contact === true)) {
+        await stopRun(id, "stopped_reply", before.name);
+      }
     };
 
     const addActivity: AppCtx["addActivity"] = async (id, a) => {
-      try { const act = await repo.addActivity(id, a, meId); setActivityTick((n) => n + 1); return act; }
+      let act: Activity;
+      try { act = await repo.addActivity(id, a, meId); setActivityTick((n) => n + 1); }
       catch (e) { fail(e, "Ajout impossible"); return null; }
+      if (a.kind === "reply" && runOf(id)) await stopRun(id, "stopped_reply", get(id)?.name);
+      return act;
     };
+
+    /** Termine le parcours en cours ; l'action prévue par la séquence est effacée si elle n'a pas été modifiée. */
+    async function stopRun(pid: string, status: RunStatus, name?: string) {
+      const run = runOf(pid);
+      if (!run) return;
+      const step = seqOf(run.sequence_id) ? stepByNo(seqOf(run.sequence_id)!, run.current_step) : null;
+      try { await repo.updateRun(run.id, { status }); } catch (e) { fail(e, "Séquence non arrêtée"); return; }
+      setRunList((l) => l.filter((r) => r.id !== run.id));
+      const p = get(pid);
+      if (step && p && p.next_action_label === step.label) await update(pid, { next_action_at: null, next_action_label: null });
+      if (status === "stopped_reply") toast(`Séquence arrêtée${name ? ` pour « ${name} »` : ""} : il a répondu`);
+    }
+
+    /** L'étape en cours est faite : programme la suivante (ou termine la séquence). */
+    async function advanceRun(pid: string): Promise<(() => Promise<void>) | null> {
+      const run = runOf(pid);
+      const seq = run ? seqOf(run.sequence_id) : null;
+      if (!run || !seq) return null;
+      const p = get(pid);
+      const prevNext = { next_action_at: p?.next_action_at ?? null, next_action_label: p?.next_action_label ?? null };
+      const prevStep = run.current_step;
+      const plan = planAfter(seq, run.started_at, run.current_step, todayStr());
+      try {
+        if (plan.finished) {
+          await repo.updateRun(run.id, { status: "finished" });
+          setRunList((l) => l.filter((r) => r.id !== run.id));
+          if (p && p.next_action_label === stepByNo(seq, prevStep)?.label) await update(pid, { next_action_at: null, next_action_label: null });
+        } else {
+          const upd = await repo.updateRun(run.id, { current_step: plan.step.step_no });
+          setRunList((l) => l.map((r) => (r.id === run.id ? upd : r)));
+          await update(pid, { next_action_at: plan.dueOn, next_action_label: plan.step.label });
+        }
+      } catch (e) { fail(e, "Séquence non mise à jour"); return null; }
+      return async () => {
+        try {
+          const back = await repo.updateRun(run.id, { current_step: prevStep, status: "running" });
+          setRunList((l) => [...l.filter((r) => r.id !== run.id), back]);
+        } catch (e) { fail(e, "Annulation incomplète"); }
+        await update(pid, prevNext);
+      };
+    }
+
+    /** Lance une séquence ; `firstDone` = la première étape vient d'être faite (message envoyé). Renvoie l'annulation. */
+    async function startRun(pid: string, sequenceId: string, firstDone: boolean): Promise<(() => Promise<void>) | null> {
+      const seq = seqOf(sequenceId);
+      const p = get(pid);
+      const start = seq ? planStart(seq, todayStr()) : null;
+      if (!seq || !p || !start) { toast("Cette séquence n'a pas d'étape.", { kind: "error" }); return null; }
+      if (runOf(pid)) { toast("Une séquence est déjà en cours pour ce prospect.", { kind: "error" }); return null; }
+      const prevNext = { next_action_at: p.next_action_at, next_action_label: p.next_action_label };
+      let run: SequenceRun;
+      try { run = await repo.createRun({ prospect_id: pid, sequence_id: seq.id, current_step: start.step.step_no }); }
+      catch (e) { fail(e, "Séquence non lancée"); return null; }
+      setRunList((l) => [...l, run]);
+      if (firstDone) await advanceRun(pid);
+      else await update(pid, { next_action_at: start.dueOn, next_action_label: start.step.label });
+      return async () => {
+        await repo.deleteRun(run.id).catch((e) => fail(e, "Annulation incomplète"));
+        setRunList((l) => l.filter((r) => r.id !== run.id));
+        await update(pid, prevNext);
+      };
+    }
 
     return {
       ref: ready, mode: repo.mode, prospects,
@@ -180,7 +283,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       async saveTemplate(t) { try { return await repo.saveTemplate(t); } catch (e) { fail(e, "Modèle non enregistré"); return null; } },
       async deleteTemplate(id) { try { await repo.deleteTemplate(id); return true; } catch (e) { fail(e, "Suppression impossible"); return false; } },
       listMessages: (limit) => repo.listMessages(limit),
-      async sendMessage(prospectId, m) {
+      async sendMessage(prospectId, m, opts) {
         const p = get(prospectId);
         if (!p) return false;
         let msg: SentMessage;
@@ -189,30 +292,73 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         const before = { stage_id: p.stage_id, next_action_at: p.next_action_at, next_action_label: p.next_action_label };
         const open = ready.stages.filter((s) => s.kind === "open").sort((a, b) => a.position - b.position);
         const advance = open.length > 1 && p.stage_id === open[0].id ? open[1] : null;
-        const patch: ProspectPatch = { next_action_at: addDays(RELANCE_DAYS), next_action_label: "Relance courte", ...(advance ? { stage_id: advance.id } : {}) };
         const created: Activity[] = [];
         const act = await addActivity(prospectId, { kind: "message", channel: m.channel, body: m.body });
         if (act) created.push(act);
-        await update(prospectId, patch);
         if (advance) {
+          await update(prospectId, { stage_id: advance.id });
           const sc = await addActivity(prospectId, { kind: "stage_change", body: `${ready.stages.find((s) => s.id === before.stage_id)?.name ?? "?"} → ${advance.name}` });
           if (sc) created.push(sc);
         }
-        toast(`Message enregistré, relance dans ${RELANCE_DAYS} jours`, {
+        // Suite : séquence en cours → étape suivante ; séquence choisie → on la lance ; sinon relance simple à J+3.
+        let undoSeq: (() => Promise<void>) | null = null;
+        let note = `relance dans ${RELANCE_DAYS} jours`;
+        const running = runOf(prospectId);
+        const runStep = running ? stepByNo(seqOf(running.sequence_id) ?? { id: "", name: "", is_active: true, steps: [] }, running.current_step) : null;
+        let keepAction = false;
+        if (running) {
+          if (runStep && !isMessageAction(runStep.action)) { keepAction = true; note = "la séquence continue à son étape"; } // ex. un appel prévu : un message libre ne la fait pas avancer
+          else { undoSeq = await advanceRun(prospectId); note = "étape suivante programmée"; }
+        } else if (opts?.sequenceId) {
+          undoSeq = await startRun(prospectId, opts.sequenceId, true);
+          note = undoSeq ? "séquence lancée, étape suivante programmée" : note;
+        }
+        if (!undoSeq && !keepAction) await update(prospectId, { next_action_at: addDays(RELANCE_DAYS), next_action_label: "Relance courte" });
+        toast(`Message enregistré, ${note}`, {
           undo: async () => {
             try { await repo.deleteMessage(msg.id); } catch (e) { fail(e, "Annulation incomplète"); }
             for (const a of created) await repo.deleteActivity(a.id).catch(() => undefined);
             setActivityTick((n) => n + 1);
+            if (undoSeq) await undoSeq();
             await update(prospectId, before);
           },
         });
         return true;
       },
+      sequences, runs, sequencesReady,
+      runFor(pid) {
+        const run = runs.find((r) => r.prospect_id === pid);
+        const seq = run ? sequences.find((q) => q.id === run.sequence_id) : undefined;
+        if (!run || !seq) return null;
+        return { run, seq, step: stepByNo(seq, run.current_step), ...progressOf(seq, run.current_step) };
+      },
+      async saveSequence(input) {
+        try {
+          const saved = await repo.saveSequence(input);
+          setSeqList((l) => (input.id ? l.map((x) => (x.id === saved.id ? saved : x)) : [...l, saved]));
+          return saved;
+        } catch (e) { fail(e, "Séquence non enregistrée"); return null; }
+      },
+      async deleteSequence(id) {
+        try {
+          await repo.deleteSequence(id);
+          setSeqList((l) => l.filter((x) => x.id !== id));
+          setRunList((l) => l.filter((r) => r.sequence_id !== id));
+          return true;
+        } catch (e) { fail(e, "Suppression impossible"); return false; }
+      },
+      async startSequence(pid, sequenceId, opts) {
+        const undo = await startRun(pid, sequenceId, !!opts?.firstDone);
+        if (undo) toast("Séquence lancée", { undo });
+        return !!undo;
+      },
+      completeStep: (pid) => advanceRun(pid),
+      async stopSequence(pid, status = "finished") { await stopRun(pid, status); },
       signOut: async () => { await repo.signOut(); toLogin(); },
       toasts, toast, dismissToast, undoLast,
       quickAddOpen, setQuickAddOpen, paletteOpen, setPaletteOpen,
     };
-  }, [ready, repo, prospects, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
+  }, [ready, repo, prospects, sequences, runs, sequencesReady, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
 
   if (state.status === "loading") return <>{fallback({ status: "loading" })}</>;
   if (state.status === "error") return <>{fallback(state)}</>;

@@ -1,8 +1,10 @@
 "use client";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { CalendarCheck, Check, ChevronRight, Clock, PhoneOff, Target } from "lucide-react";
+import { CalendarCheck, Check, ChevronRight, Clock, PenLine, PhoneOff, Target } from "lucide-react";
 import { useApp } from "@/components/app-provider";
+import { MessageComposer } from "@/components/message-composer";
+import { isMessageAction } from "@/lib/sequence";
 import { Button, CloseButton, Dialog, Dot, Empty, inputCls } from "@/components/ui";
 import { CHANNEL_LABEL, addDays, fmtDue, fmtEuros, today } from "@/lib/labels";
 import { computeIndicators, emptyGoal, monthKey, progress, statsSince, type Indicators } from "@/lib/stats";
@@ -13,6 +15,7 @@ const NO_REPLY_DAYS = 3; // « Pas de réponse » reporte la relance de 3 jours
 
 export default function Page() {
   const app = useApp();
+  const [composeFor, setComposeFor] = useState<string | null>(null);
   const { prospects, ref, listActivitiesSince, getGoal, activityTick } = app;
   const router = useRouter();
   const pathname = usePathname();
@@ -54,12 +57,13 @@ export default function Page() {
         {dueCount === 0 && lists.firstContacts.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border"><Empty icon={<CalendarCheck size={22} />} title="Rien de prévu aujourd’hui" text="Aucune relance due et aucun prospect en attente de premier contact. Planifiez une relance depuis une fiche, ou ajoutez un prospect avec la touche N." /></div>
         ) : null}
-        <Section title="En retard" tone="late" items={lists.late} render={(p) => <DueRow key={p.id} p={p} onOpen={open} />} />
-        <Section title="Aujourd’hui" items={lists.today} render={(p) => <DueRow key={p.id} p={p} onOpen={open} />} />
+        <Section title="En retard" tone="late" items={lists.late} render={(p) => <DueRow key={p.id} p={p} onOpen={open} onWrite={setComposeFor} />} />
+        <Section title="Aujourd’hui" items={lists.today} render={(p) => <DueRow key={p.id} p={p} onOpen={open} onWrite={setComposeFor} />} />
         <Section title="Premiers contacts à faire" hint="Les mieux notés de l’étape « À contacter » sans action prévue." items={lists.firstContacts} render={(p) => <FirstRow key={p.id} p={p} onOpen={open} />} />
         <Section title="À venir (7 jours)" items={lists.upcoming} render={(p) => <UpcomingRow key={p.id} p={p} onOpen={open} />} />
       </div>
 
+      {composeFor ? <MessageComposer prospectId={composeFor} onClose={() => setComposeFor(null)} /> : null}
       {goalOpen ? <GoalDialog month={month} goal={goal ?? emptyGoal(month)} onClose={() => setGoalOpen(false)} onSaved={setGoalState} /> : null}
     </div>
   );
@@ -94,15 +98,17 @@ function Identity({ p, onOpen, line }: { p: Prospect; onOpen: (id: string) => vo
 }
 
 /** Relance ou action prévue : Fait / Reporter à +2 j / Pas de réponse. */
-function DueRow({ p, onOpen }: { p: Prospect; onOpen: (id: string) => void }) {
-  const { update, addActivity, deleteActivity, toast } = useApp();
+function DueRow({ p, onOpen, onWrite }: { p: Prospect; onOpen: (id: string) => void; onWrite: (id: string) => void }) {
+  const { update, addActivity, deleteActivity, toast, runFor, completeStep } = useApp();
   const due = fmtDue(p.next_action_at);
+  const rf = runFor(p.id);
   const before = { next_action_at: p.next_action_at, next_action_label: p.next_action_label };
 
   const done = async () => {
     const a = await addActivity(p.id, { kind: "note", body: `Fait : ${p.next_action_label ?? "action prévue"}` });
     await update(p.id, { next_action_at: null, next_action_label: null });
-    toast(`« ${p.name} » : action faite`, { undo: async () => { await update(p.id, before); if (a) await deleteActivity(a.id); } });
+    const undoSeq = rf ? await completeStep(p.id) : null; // séquence : programme l'étape suivante
+    toast(`« ${p.name} » : action faite`, { undo: async () => { await undoSeq?.(); await update(p.id, before); if (a) await deleteActivity(a.id); } });
   };
   const snooze = async () => {
     await update(p.id, { next_action_at: addDays(2) });
@@ -110,14 +116,16 @@ function DueRow({ p, onOpen }: { p: Prospect; onOpen: (id: string) => void }) {
   };
   const noReply = async () => {
     const a = await addActivity(p.id, { kind: "note", body: "Pas de réponse" });
-    await update(p.id, { next_action_at: addDays(NO_REPLY_DAYS), next_action_label: "Relancer" });
+    // Dans une séquence, l'étape reste la même (on réessaie) : son libellé est conservé.
+    await update(p.id, { next_action_at: addDays(NO_REPLY_DAYS), next_action_label: rf ? p.next_action_label : "Relancer" });
     toast(`« ${p.name} » : pas de réponse, relance dans ${NO_REPLY_DAYS} jours`, { undo: async () => { await update(p.id, before); if (a) await deleteActivity(a.id); } });
   };
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-      <Identity p={p} onOpen={onOpen} line={<><span className={due?.late ? "font-medium text-danger" : ""}>{due?.text}</span>{p.next_action_label ? ` · ${p.next_action_label}` : ""}{p.preferred_channel ? ` · ${CHANNEL_LABEL[p.preferred_channel]}` : ""}</>} />
-      <div className="flex shrink-0 gap-1.5">
+      <Identity p={p} onOpen={onOpen} line={<><span className={due?.late ? "font-medium text-danger" : ""}>{due?.text}</span>{p.next_action_label ? ` · ${p.next_action_label}` : ""}{p.preferred_channel ? ` · ${CHANNEL_LABEL[p.preferred_channel]}` : ""}{rf ? ` · séquence ${rf.index}/${rf.total}` : ""}</>} />
+      <div className="flex shrink-0 flex-wrap gap-1.5">
+        {rf?.step && isMessageAction(rf.step.action) ? <Button size="sm" onClick={() => onWrite(p.id)} title="Ouvre le générateur de message avec le bon modèle"><PenLine size={14} aria-hidden /> Écrire</Button> : null}
         <Button size="sm" variant="primary" onClick={() => void done()}><Check size={14} aria-hidden /> Fait</Button>
         <Button size="sm" onClick={() => void snooze()}><Clock size={14} aria-hidden /> +2 j</Button>
         <Button size="sm" onClick={() => void noReply()}><PhoneOff size={14} aria-hidden /> Pas de réponse</Button>

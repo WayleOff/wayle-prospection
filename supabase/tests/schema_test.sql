@@ -27,6 +27,25 @@ insert into prospects (name, stage_id, instagram, phone)
 select pg_temp.assert((select name_norm || '|' || instagram_norm || '|' || phone_norm from prospects where name like 'Épicerie%')
                       = 'epicerie chez leon|chez.leon|33639981234', 'trigger de normalisation');
 
+-- Séquences : un seul parcours en cours par prospect, libellé d'étape
+insert into sequences (name) values ('Test');
+insert into sequence_steps (sequence_id, step_no, day_offset, action, label)
+  select id, 1, 0, 'first_contact', 'Premier message' from sequences where name = 'Test';
+select pg_temp.assert((select label from sequence_steps limit 1) = 'Premier message', 'libellé d''étape');
+insert into sequence_runs (prospect_id, sequence_id)
+  select (select id from prospects where name = 'Épicerie Chez Léon'), id from sequences where name = 'Test';
+do $$ begin
+  begin
+    insert into sequence_runs (prospect_id, sequence_id)
+      select (select id from prospects where name = 'Épicerie Chez Léon'), id from sequences where name = 'Test';
+    raise exception 'ÉCHEC : deux séquences en cours pour un même prospect';
+  exception when unique_violation then null; end;
+end $$;
+update sequence_runs set status = 'finished';
+insert into sequence_runs (prospect_id, sequence_id)
+  select (select id from prospects where name = 'Épicerie Chez Léon'), id from sequences where name = 'Test';
+select pg_temp.assert((select count(*) from sequence_runs where status = 'running') = 1, 'nouvelle séquence possible après la fin de la précédente');
+
 -- Droits : un visiteur anonyme ne voit rien
 set local role anon;
 do $$ begin

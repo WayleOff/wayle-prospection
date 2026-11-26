@@ -1,4 +1,4 @@
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, SentMessage, Template, TemplateInput } from "../types";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, SentMessage, Sequence, SequenceInput, SequenceRun, Template, TemplateInput } from "../types";
 
 /**
  * Accès aux données. Deux implémentations : Supabase (production) et mémoire (mode démonstration,
@@ -25,5 +25,13 @@ export interface Repo {
   addMessage(m: MessageInput, authorId: string | null): Promise<SentMessage>;
   deleteMessage(id: string): Promise<void>;
   listMessages(limit: number): Promise<SentMessage[]>;
+  listSequences(): Promise<Sequence[]>;
+  saveSequence(s: SequenceInput): Promise<Sequence>;
+  deleteSequence(id: string): Promise<void>;
+  /** Parcours en cours uniquement (status « running »). */
+  listRuns(): Promise<SequenceRun[]>;
+  createRun(r: { prospect_id: string; sequence_id: string; current_step: number }): Promise<SequenceRun>;
+  updateRun(id: string, patch: { current_step?: number; status?: RunStatus }): Promise<SequenceRun>;
+  deleteRun(id: string): Promise<void>;
   signOut(): Promise<void>;
 }

@@ -91,3 +91,20 @@ export interface SentMessage {
   created_at: string;
 }
 export type MessageInput = Pick<SentMessage, "prospect_id" | "template_id" | "channel" | "variant" | "body" | "written_by_ai">;
+
+/** Action d'une étape de séquence (les valeurs de la base : task_kind). */
+export type StepAction = "first_contact" | "follow_up" | "call" | "visit";
+export interface SequenceStep {
+  id?: string;
+  step_no: number;
+  /** Jours après le début de la séquence (0 = le jour du lancement). */
+  day_offset: number;
+  action: StepAction;
+  channel: Channel | null;
+  label: string;
+  template_id: string | null;
+}
+export interface Sequence { id: string; name: string; is_active: boolean; steps: SequenceStep[] }
+export type SequenceInput = Omit<Sequence, "id"> & { id?: string };
+export type RunStatus = "running" | "stopped_reply" | "finished";
+export interface SequenceRun { id: string; prospect_id: string; sequence_id: string; current_step: number; status: RunStatus; started_at: string }

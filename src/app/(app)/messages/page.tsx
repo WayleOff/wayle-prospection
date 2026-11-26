@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageSquare, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useApp } from "@/components/app-provider";
 import { MessageComposer } from "@/components/message-composer";
+import { SequencesTab } from "@/components/sequences-tab";
 import { Button, CloseButton, Dialog, Empty, inputCls } from "@/components/ui";
 import { CHANNEL_LABEL, fmtWhen } from "@/lib/labels";
 import { VARIABLES, starterTemplates } from "@/lib/message";
@@ -16,7 +17,7 @@ export default function Page() {
   const { ref, listTemplates, saveTemplate, deleteTemplate, listMessages, byId } = useApp();
   const router = useRouter();
   const pathname = usePathname();
-  const [tab, setTab] = useState<"modeles" | "envoyes">("modeles");
+  const [tab, setTab] = useState<"modeles" | "sequences" | "envoyes">("modeles");
   const [templates, setTemplates] = useState<Template[] | null>(null);
   const [sent, setSent] = useState<SentMessage[] | null>(null);
   const [editing, setEditing] = useState<TemplateInput | null>(null);
@@ -55,7 +56,7 @@ export default function Page() {
       </div>
 
       <div role="tablist" aria-label="Messages" className="mt-4 flex gap-1.5">
-        {([["modeles", "Modèles"], ["envoyes", "Envoyés"]] as const).map(([k, label]) => (
+        {([["modeles", "Modèles"], ["sequences", "Séquences"], ["envoyes", "Envoyés"]] as const).map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
             className={`h-8 rounded-lg px-3 text-[13px] font-medium ${tab === k ? "bg-accent text-accent-fg" : "border border-border bg-surface hover:bg-subtle"}`}>{label}</button>
         ))}
@@ -97,7 +98,8 @@ export default function Page() {
             ))}
           </div>
         )
-      ) : sent === null ? <p className="mt-6 text-sm text-muted">Chargement…</p>
+      ) : tab === "sequences" ? <SequencesTab />
+      : sent === null ? <p className="mt-6 text-sm text-muted">Chargement…</p>
       : sent.length === 0 ? (
         <div className="mt-6 rounded-2xl border border-dashed border-border"><Empty icon={<MessageSquare size={22} />} title="Aucun message envoyé" text="Les messages marqués comme envoyés depuis le générateur apparaissent ici." /></div>
       ) : (

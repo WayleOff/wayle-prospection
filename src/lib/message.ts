@@ -1,3 +1,4 @@
+import { normText } from "./normalize";
 import type { Category, Channel, Prospect, Template, Tone } from "./types";
 
 /** Variables que l'on peut écrire dans un modèle. */
@@ -46,9 +47,12 @@ export function fillTemplate(body: string, v: FillVars): { text: string; missing
 const isRelance = (t: Template) => /relance|dernier/i.test(t.name);
 
 /** Modèle proposé par défaut : bon canal, bon ton, relance si le prospect a déjà été contacté. */
-export function pickTemplate(templates: Template[], o: { channel: Channel; tone: Tone; categoryId: string | null; contacted: boolean }): Template | null {
+export function pickTemplate(templates: Template[], o: { channel: Channel; tone: Tone; categoryId: string | null; contacted: boolean; label?: string | null }): Template | null {
   const list = templates.filter((t) => t.channel === o.channel);
-  const score = (t: Template) => (t.tone === o.tone ? 4 : 0) + (o.categoryId && t.category_id === o.categoryId ? 2 : t.category_id == null ? 1 : 0) + (isRelance(t) === o.contacted ? 8 : 0);
+  const want = normText(o.label);
+  // Une étape de séquence (« Relance courte », « Dernier message »…) retrouve le modèle qui porte ce nom.
+  const named = (t: Template) => (want && (normText(t.name) ?? "").includes(want) ? 16 : 0);
+  const score = (t: Template) => named(t) + (t.tone === o.tone ? 4 : 0) + (o.categoryId && t.category_id === o.categoryId ? 2 : t.category_id == null ? 1 : 0) + (isRelance(t) === o.contacted ? 8 : 0);
   return [...list].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name))[0] ?? null;
 }
 

@@ -3,10 +3,11 @@
 Outil de prospection de Wayle Production (vidéaste, Rouen), pensé comme un petit CRM : fiches prospects, pipeline, relances, messages générés avec Claude, offres et devis.
 Interface en français, utilisable sur ordinateur et sur téléphone.
 
-**État : étape (c).**
+**État : étape (d).**
 - (a) Connexion, fiches prospects, liste filtrable, ajout rapide avec détection de doublons, historique, barre de commande (Ctrl/Cmd + K).
 - (b) « Aujourd'hui » (actions du jour, indicateurs, objectif du mois) et pipeline en colonnes (glisser-déposer, clavier, filtres).
 - (c) Générateur de messages : modèles par canal, ton et catégorie, réécriture par Claude (3 variantes), « Copier et marquer comme envoyé » (historique, relance à J+3).
+- (d) Séquences de relance : suites d'étapes configurables (ex. J0 message → J+3 relance → J+7 visite ou appel → J+14 dernier message), programmées automatiquement dans « Aujourd'hui », arrêtées dès que le prospect répond.
 
 Les écrans Carte, Offres et Statistiques affichent « Pas encore construit » et seront ajoutés étape par étape.
 
@@ -18,6 +19,14 @@ NEXT_PUBLIC_DEMO=1 npm run dev     # http://localhost:3000
 ```
 
 Le mode démonstration charge 15 prospects fictifs de Rouen et garde vos modifications dans le navigateur. Rien n'est envoyé nulle part.
+
+## Séquences de relance
+
+- **Créer** : Messages → onglet *Séquences* → « Ajouter la séquence de départ » (J0, J+3, J+7, J+14), puis modifier à volonté (jours, action, libellé, canal, modèle de message par étape).
+- **Lancer** : depuis le générateur de message (« Après l'envoi » : relance simple dans 3 jours ou lancer une séquence) ou depuis la fiche (bloc *Séquence de relance*).
+- **Suivre** : la prochaine étape apparaît dans « Aujourd'hui » (« séquence 2/4 ») avec un bouton *Écrire* qui ouvre le générateur avec le bon canal et le bon modèle. *Fait* ou l'envoi d'un message passe à l'étape suivante (annulable). *Pas de réponse* repousse la même étape de 3 jours.
+- **Arrêt automatique** : le prospect passe à partir de « Répondu », une réponse est notée dans l'historique, ou « Ne pas contacter » est coché. Arrêt manuel possible depuis la fiche.
+- Une étape n'est jamais programmée dans le passé (au plus tôt demain). Envoyer un message libre pendant une étape « visite ou appel » ne fait pas avancer la séquence.
 
 ## Raccourcis
 
@@ -33,7 +42,7 @@ Le mode démonstration charge 15 prospects fictifs de Rouen et garde vos modific
 
 ## Mise en service (vraies données)
 
-1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
+1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, `supabase/migrations/20261127000000_sequences.sql` (séquences, à exécuter aussi sur un projet existant), puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
 2. **Invitations** — dans l'éditeur SQL, *avant* d'inviter quiconque :
    `insert into team_invites (email) values ('vous@exemple.fr');` (en minuscules). Seules les adresses listées obtiennent un profil ; le prénom affiché est tiré de l'adresse et modifiable dans la table `profiles`.
    Puis, pour chaque personne, créer son compte dans Authentication → Users → *Add user* → *Create new user* (cocher *Auto Confirm User*, mot de passe aléatoire jamais utilisé). Le lien de connexion ne crée jamais de compte : sans cette étape, l'adresse est refusée (« n'est pas invitée »).

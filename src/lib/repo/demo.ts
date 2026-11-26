@@ -1,10 +1,11 @@
-import type { Activity, Goal, Prospect, SentMessage, Template } from "../types";
+import type { Activity, Goal, Prospect, SentMessage, Sequence, SequenceRun, Template } from "../types";
 import type { Repo } from "./types";
 import { DEMO_ACTIVITIES, DEMO_REFERENCE, activityDate, demoProspects } from "./demo-data";
 import { starterTemplates } from "../message";
+import { normalizeSteps } from "../sequence";
 
 const KEY = "wayle-prospection-demo-v1";
-interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[] }
+interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[]; sequences?: Sequence[]; runs?: SequenceRun[] }
 
 const uid = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
@@ -99,6 +100,37 @@ export function createDemoRepo(): Repo {
     },
     async deleteMessage(id) { const s = load(); s.messages = (s.messages ?? []).filter((m) => m.id !== id); save(); },
     async listMessages(limit) { return structuredClone((load().messages ?? []).slice(0, limit)); },
+    async listSequences() { return structuredClone(load().sequences ?? []); },
+    async saveSequence(input) {
+      const s = load();
+      s.sequences ??= [];
+      const saved: Sequence = { id: input.id ?? uid(), name: input.name, is_active: input.is_active, steps: normalizeSteps(input.steps).map((st) => ({ ...st, id: st.id ?? uid() })) };
+      s.sequences = input.id ? s.sequences.map((x) => (x.id === input.id ? saved : x)) : [...s.sequences, saved];
+      save();
+      return structuredClone(saved);
+    },
+    async deleteSequence(id) {
+      const s = load();
+      s.sequences = (s.sequences ?? []).filter((x) => x.id !== id);
+      s.runs = (s.runs ?? []).filter((r) => r.sequence_id !== id);
+      save();
+    },
+    async listRuns() { return structuredClone((load().runs ?? []).filter((r) => r.status === "running")); },
+    async createRun(r) {
+      const s = load();
+      s.runs ??= [];
+      if (s.runs.some((x) => x.prospect_id === r.prospect_id && x.status === "running")) throw new Error("Une séquence est déjà en cours pour ce prospect");
+      const run: SequenceRun = { ...r, id: uid(), status: "running", started_at: new Date().toISOString() };
+      s.runs.push(run); save();
+      return structuredClone(run);
+    },
+    async updateRun(id, patch) {
+      const run = (load().runs ?? []).find((x) => x.id === id);
+      if (!run) throw new Error("Séquence introuvable");
+      Object.assign(run, patch); save();
+      return structuredClone(run);
+    },
+    async deleteRun(id) { const s = load(); s.runs = (s.runs ?? []).filter((x) => x.id !== id); save(); },
     async signOut() { /* pas de compte en démonstration */ },
   };
 }

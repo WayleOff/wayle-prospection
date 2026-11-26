@@ -5,6 +5,7 @@ import { Archive, CalendarClock, CheckCheck, ExternalLink, MessageSquareText, Ph
 import { useApp } from "./app-provider";
 import { Button, CloseButton, Dialog, Dot, inputCls } from "./ui";
 import { MessageComposer } from "./message-composer";
+import { stepText } from "@/lib/sequence";
 import { ACTIVITY_LABEL, CHANNEL_LABEL, DISTRICT_LABEL, HEAT_COLOR, HEAT_LABEL, IG_LABEL, addDays, fmtDue, fmtEuros, fmtWhen } from "@/lib/labels";
 import { instagramUrl, telHref } from "@/lib/normalize";
 import type { Activity, Channel, District, Heat, IgActivity, Prospect, ProspectPatch } from "@/lib/types";
@@ -70,6 +71,40 @@ function Pick<T extends string>({ id, label, value, options, onChange, empty }: 
 }
 
 const SECTION = "text-[11px] font-semibold uppercase tracking-wide text-muted";
+
+/** Séquence de relance du prospect : lancer, marquer l'étape faite, arrêter. */
+function SequenceBlock({ p }: { p: Prospect }) {
+  const { sequences, sequencesReady, runFor, startSequence, completeStep, stopSequence, toast } = useApp();
+  const active = sequences.filter((q) => q.is_active && q.steps.length > 0);
+  const [pick, setPick] = useState("");
+  if (!sequencesReady) return null;
+  const rf = runFor(p.id);
+  const chosen = pick || active[0]?.id || "";
+  return (
+    <div className="rounded-xl border border-border p-3" role="group" aria-label="Séquence de relance">
+      <div className="mb-1.5 text-xs font-medium text-muted">Séquence de relance</div>
+      {rf ? (
+        <div className="space-y-2">
+          <p className="text-sm">« {rf.seq.name} » · étape {rf.index}/{rf.total}{rf.step ? <> : <span className="font-medium">{stepText(rf.step)}</span></> : null}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={async () => { const undo = await completeStep(p.id); if (undo) toast("Étape faite, suite programmée", { undo }); }}><CheckCheck size={14} aria-hidden /> Étape faite</Button>
+            <Button size="sm" variant="danger" onClick={() => void stopSequence(p.id)}>Arrêter la séquence</Button>
+          </div>
+        </div>
+      ) : active.length === 0 ? (
+        <p className="text-sm text-muted">Aucune séquence active. Crée-en une dans Messages → Séquences.</p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="f-seq" className="sr-only">Séquence à lancer</label>
+          <select id="f-seq" className={`${inputCls} !w-auto min-w-0 flex-1`} value={chosen} onChange={(e) => setPick(e.target.value)}>
+            {active.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
+          </select>
+          <Button size="sm" onClick={() => void startSequence(p.id, chosen)}>Lancer</Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
   const app = useApp();
@@ -150,6 +185,7 @@ function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
               <input id="f-next-at" type="date" value={p.next_action_at ?? ""} onChange={(e) => void save({ next_action_at: e.target.value || null })} className={inputCls} />
             </Label>
           </div>
+          <SequenceBlock p={p} />
           <div>
             <div className="mb-1 text-xs font-medium text-muted">Étiquettes</div>
             <div className="flex flex-wrap gap-1.5">
