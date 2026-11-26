@@ -31,6 +31,7 @@ Le mode démonstration charge 15 prospects fictifs de Rouen et garde vos modific
 1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
 2. **Invitations** — dans l'éditeur SQL, *avant* d'inviter quiconque :
    `insert into team_invites (email) values ('vous@exemple.fr');` (en minuscules). Seules les adresses listées obtiennent un profil ; le prénom affiché est tiré de l'adresse et modifiable dans la table `profiles`.
+   Puis, pour chaque personne, créer son compte dans Authentication → Users → *Add user* → *Create new user* (cocher *Auto Confirm User*, mot de passe aléatoire jamais utilisé). Le lien de connexion ne crée jamais de compte : sans cette étape, l'adresse est refusée (« n'est pas invitée »).
 3. **Authentification** (Authentication → Providers → Email) : désactiver les inscriptions libres (« Allow new users to sign up »), laisser « Confirm email » actif. Dans *URL Configuration*, mettre l'adresse du site en *Site URL* et `https://votre-site/auth/callback` en *Redirect URLs*.
 4. **Modèles d'e-mail** (Authentication → Email Templates), pour « Magic Link » et « Invite user » : remplacer le lien par
    `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink` (et `type=invite` pour l'invitation).
