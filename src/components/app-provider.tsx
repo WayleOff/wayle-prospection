@@ -1,7 +1,9 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getRepo } from "@/lib/repo";
-import type { Activity, ActivityKind, Channel, Goal, Prospect, ProspectInput, ProspectPatch, Reference } from "@/lib/types";
+import { addDays } from "@/lib/labels";
+import { RELANCE_DAYS } from "@/lib/message";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, SentMessage, Template, TemplateInput } from "@/lib/types";
 
 export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void }
 
@@ -24,6 +26,12 @@ interface AppCtx {
   listActivitiesSince: (iso: string) => Promise<Activity[]>;
   getGoal: (month: string) => Promise<Goal | null>;
   setGoal: (goal: Goal) => Promise<Goal | null>;
+  listTemplates: () => Promise<Template[]>;
+  saveTemplate: (t: TemplateInput) => Promise<Template | null>;
+  deleteTemplate: (id: string) => Promise<boolean>;
+  listMessages: (limit: number) => Promise<SentMessage[]>;
+  /** « Marquer comme envoyé » : journalise le message, programme la relance et passe un premier contact à l'étape suivante. */
+  sendMessage: (prospectId: string, m: Omit<MessageInput, "prospect_id">) => Promise<boolean>;
   signOut: () => Promise<void>;
   toasts: Toast[];
   toast: (message: string, opts?: { undo?: Toast["undo"]; kind?: Toast["kind"] }) => void;
@@ -123,7 +131,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
 
     return {
       ref: ready, mode: repo.mode, prospects,
-      byId: get,
+      byId: (id) => prospects.find((p) => p.id === id), // lu pendant l'affichage : toujours l'état courant
       stageName: (id) => ready.stages.find((s) => s.id === id)?.name ?? "",
       activityTick,
       async create(input) {
@@ -168,6 +176,38 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       listActivitiesSince: (iso) => repo.listActivitiesSince(iso),
       getGoal: (month) => repo.getGoal(month),
       async setGoal(goal) { try { return await repo.setGoal(goal); } catch (e) { fail(e, "Objectif non enregistré"); return null; } },
+      listTemplates: () => repo.listTemplates(),
+      async saveTemplate(t) { try { return await repo.saveTemplate(t); } catch (e) { fail(e, "Modèle non enregistré"); return null; } },
+      async deleteTemplate(id) { try { await repo.deleteTemplate(id); return true; } catch (e) { fail(e, "Suppression impossible"); return false; } },
+      listMessages: (limit) => repo.listMessages(limit),
+      async sendMessage(prospectId, m) {
+        const p = get(prospectId);
+        if (!p) return false;
+        let msg: SentMessage;
+        try { msg = await repo.addMessage({ ...m, prospect_id: prospectId }, meId); }
+        catch (e) { fail(e, "Message non enregistré"); return false; }
+        const before = { stage_id: p.stage_id, next_action_at: p.next_action_at, next_action_label: p.next_action_label };
+        const open = ready.stages.filter((s) => s.kind === "open").sort((a, b) => a.position - b.position);
+        const advance = open.length > 1 && p.stage_id === open[0].id ? open[1] : null;
+        const patch: ProspectPatch = { next_action_at: addDays(RELANCE_DAYS), next_action_label: "Relance courte", ...(advance ? { stage_id: advance.id } : {}) };
+        const created: Activity[] = [];
+        const act = await addActivity(prospectId, { kind: "message", channel: m.channel, body: m.body });
+        if (act) created.push(act);
+        await update(prospectId, patch);
+        if (advance) {
+          const sc = await addActivity(prospectId, { kind: "stage_change", body: `${ready.stages.find((s) => s.id === before.stage_id)?.name ?? "?"} → ${advance.name}` });
+          if (sc) created.push(sc);
+        }
+        toast(`Message enregistré, relance dans ${RELANCE_DAYS} jours`, {
+          undo: async () => {
+            try { await repo.deleteMessage(msg.id); } catch (e) { fail(e, "Annulation incomplète"); }
+            for (const a of created) await repo.deleteActivity(a.id).catch(() => undefined);
+            setActivityTick((n) => n + 1);
+            await update(prospectId, before);
+          },
+        });
+        return true;
+      },
       signOut: async () => { await repo.signOut(); toLogin(); },
       toasts, toast, dismissToast, undoLast,
       quickAddOpen, setQuickAddOpen, paletteOpen, setPaletteOpen,

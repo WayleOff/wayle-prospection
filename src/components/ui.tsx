@@ -1,5 +1,7 @@
 "use client";
-import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { dialogStore } from "./dialog-store";
+import { Toasts } from "./toasts";
 import { X } from "lucide-react";
 
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger"; size?: "sm" | "md" };
@@ -20,6 +22,12 @@ export const inputCls = "h-9 w-full rounded-lg border border-border bg-surface p
 /** Boîte de dialogue native (focus piégé, Échap pour fermer). `drawer` = panneau latéral. */
 export function Dialog({ open, onClose, variant, label, children }: { open: boolean; onClose: () => void; variant: "drawer" | "modal"; label: string; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const [owner] = useState(() => ({}));
+  useEffect(() => {
+    if (!open) return;
+    dialogStore.push(owner);
+    return () => dialogStore.remove(owner);
+  }, [open, owner]);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
@@ -39,6 +47,7 @@ export function Dialog({ open, onClose, variant, label, children }: { open: bool
       onClick={(e) => { if (e.target === ref.current) onClose(); }}
     >
       {open ? children : null}
+      {open ? <Toasts scope="dialog" owner={owner} /> : null}
     </dialog>
   );
 }

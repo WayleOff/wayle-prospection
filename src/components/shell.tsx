@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { BarChart3, CalendarCheck, Columns3, Command, Map, MessageSquare, Moon, MoreHorizontal, Package, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { AppProvider, useApp } from "./app-provider";
 import { Button } from "./ui";
 import { QuickAdd } from "./quick-add";
 import { CommandPalette } from "./command-palette";
+import { Toasts } from "./toasts";
 import { ProspectSheet } from "./prospect-sheet";
 
 export const NAV = [
@@ -92,7 +93,7 @@ function Frame({ children }: { children: ReactNode }) {
         const box = document.querySelector<HTMLInputElement>("[data-search]");
         if (box) box.focus(); else setPaletteOpen(true);
       }
-      else if (e.key === "m" || e.key === "M") toast("Le générateur de messages arrive à l'étape d.");
+      else if (e.key === "m" || e.key === "M") window.dispatchEvent(new Event("wayle:message"));
       else if (e.key === "r" || e.key === "R") window.dispatchEvent(new Event("wayle:relance"));
     };
     window.addEventListener("keydown", onKey);
@@ -178,31 +179,7 @@ function Frame({ children }: { children: ReactNode }) {
       <QuickAdd />
       <CommandPalette />
       <ProspectSheet />
-      <Toasts />
-    </div>
-  );
-}
-
-function Toasts() {
-  const { toasts, dismissToast } = useApp();
-  const box = useRef<HTMLDivElement>(null);
-  // Un « popover » vit dans la couche supérieure du navigateur : il reste visible au-dessus d'une fiche ouverte.
-  useEffect(() => {
-    const el = box.current;
-    if (!el || typeof el.showPopover !== "function") return;
-    if (el.matches(":popover-open")) el.hidePopover();
-    if (toasts.length > 0) el.showPopover();
-  }, [toasts]);
-  return (
-    <div ref={box} popover="manual" className="toasts pointer-events-none flex flex-col items-center gap-2 px-3" role="status" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className={`pointer-events-auto flex max-w-md items-center gap-3 rounded-xl border px-4 py-2.5 text-sm shadow-lg ${t.kind === "error" ? "border-danger/40 bg-surface text-danger" : "border-border bg-fg text-bg"}`}>
-          <span>{t.message}</span>
-          {t.undo ? (
-            <button type="button" className="font-semibold underline underline-offset-2" onClick={() => { const u = t.undo; dismissToast(t.id); void u?.(); }}>Annuler</button>
-          ) : null}
-        </div>
-      ))}
+      <Toasts scope="page" />
     </div>
   );
 }

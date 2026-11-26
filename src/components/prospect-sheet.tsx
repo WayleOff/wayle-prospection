@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Archive, CalendarClock, CheckCheck, ExternalLink, MessageSquareText, Phone, Send, Trash2 } from "lucide-react";
 import { useApp } from "./app-provider";
 import { Button, CloseButton, Dialog, Dot, inputCls } from "./ui";
+import { MessageComposer } from "./message-composer";
 import { ACTIVITY_LABEL, CHANNEL_LABEL, DISTRICT_LABEL, HEAT_COLOR, HEAT_LABEL, IG_LABEL, addDays, fmtDue, fmtEuros, fmtWhen } from "@/lib/labels";
 import { instagramUrl, telHref } from "@/lib/normalize";
 import type { Activity, Channel, District, Heat, IgActivity, Prospect, ProspectPatch } from "@/lib/types";
@@ -75,11 +76,14 @@ function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
   const { ref, update, setTags, moveStage, archive, addActivity, toast } = app;
   const save = (patch: ProspectPatch) => update(p.id, patch);
   const [relance, setRelance] = useState(false);
+  const [compose, setCompose] = useState(false);
 
   useEffect(() => {
     const open = () => setRelance((v) => !v);
+    const message = () => setCompose(true);
     window.addEventListener("wayle:relance", open);
-    return () => window.removeEventListener("wayle:relance", open);
+    window.addEventListener("wayle:message", message);
+    return () => { window.removeEventListener("wayle:relance", open); window.removeEventListener("wayle:message", message); };
   }, []);
 
   const ig = instagramUrl(p.instagram);
@@ -121,7 +125,7 @@ function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
             : <Button disabled title="Aucun compte Instagram renseigné"><ExternalLink size={15} aria-hidden /> Ouvrir Instagram</Button>}
           {tel ? <a href={tel} className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-surface px-3.5 text-sm font-medium hover:bg-subtle"><Phone size={15} aria-hidden /> Appeler</a>
             : <Button disabled title="Aucun téléphone renseigné"><Phone size={15} aria-hidden /> Appeler</Button>}
-          <Button disabled title="Disponible à l’étape suivante : générateur de messages"><MessageSquareText size={15} aria-hidden /> Générer un message</Button>
+          <Button variant="primary" onClick={() => setCompose(true)}><MessageSquareText size={15} aria-hidden /> Générer un message</Button>
           <div className="relative">
             <Button onClick={() => setRelance((v) => !v)} aria-expanded={relance}><CalendarClock size={15} aria-hidden /> Planifier une relance</Button>
             {relance ? (
@@ -201,6 +205,7 @@ function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
           <Button variant="danger" onClick={() => { onClose(); void archive(p.id); }}><Archive size={15} aria-hidden /> Archiver cette fiche</Button>
         </div>
       </div>
+      {compose ? <MessageComposer prospectId={p.id} onClose={() => setCompose(false)} /> : null}
     </div>
   );
 }

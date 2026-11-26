@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Activity, Category, Goal, Profile, Prospect, Reference, Stage, Tag } from "../types";
+import type { Activity, Category, Goal, Profile, Prospect, Reference, SentMessage, Stage, Tag, Template } from "../types";
 import type { Repo } from "./types";
 
 type Row = Record<string, unknown> & { id: string; prospect_tags?: { tag_id: string }[] };
 
+const MESSAGE_COLS = "id, prospect_id, template_id, channel, variant, body, written_by_ai, sent_at, author_id, created_at";
 const PAGE = 1000; // limite de lignes par requête de l'API Supabase
 
 /** Colonnes techniques de la base qui n'existent pas côté application. */
@@ -117,6 +118,43 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
       const { data, error } = await sb.from("goals").upsert(goal, { onConflict: "month" }).select("month, revenue_cents, contacts").single();
       fail(error);
       return data as Goal;
+    },
+
+    async listTemplates() {
+      const { data, error } = await sb.from("templates").select("id, name, channel, category_id, tone, body").order("name");
+      fail(error);
+      return data as Template[];
+    },
+
+    async saveTemplate(t) {
+      const row = { name: t.name, channel: t.channel, category_id: t.category_id, tone: t.tone, body: t.body };
+      const q = t.id ? sb.from("templates").update(row).eq("id", t.id) : sb.from("templates").insert(row);
+      const { data, error } = await q.select("id, name, channel, category_id, tone, body").single();
+      fail(error);
+      return data as Template;
+    },
+
+    async deleteTemplate(id) {
+      const { error } = await sb.from("templates").delete().eq("id", id);
+      fail(error);
+    },
+
+    async addMessage(m, authorId) {
+      const { data, error } = await sb.from("messages")
+        .insert({ ...m, sent_at: new Date().toISOString(), author_id: authorId }).select(MESSAGE_COLS).single();
+      fail(error);
+      return data as SentMessage;
+    },
+
+    async deleteMessage(id) {
+      const { error } = await sb.from("messages").delete().eq("id", id);
+      fail(error);
+    },
+
+    async listMessages(limit) {
+      const { data, error } = await sb.from("messages").select(MESSAGE_COLS).order("created_at", { ascending: false }).limit(limit);
+      fail(error);
+      return data as SentMessage[];
     },
 
     async signOut() { await sb.auth.signOut(); },

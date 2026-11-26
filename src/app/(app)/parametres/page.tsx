@@ -1,10 +1,17 @@
 "use client";
+import { useEffect, useState } from "react";
 import { LogOut } from "lucide-react";
 import { useApp } from "@/components/app-provider";
 import { Button } from "@/components/ui";
 
 export default function Page() {
   const { ref, mode, signOut, prospects } = useApp();
+  const [claude, setClaude] = useState<{ configured: boolean; model: string } | null | "error">(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/messages/status").then((r) => (r.ok ? r.json() : Promise.reject())).then((j) => { if (alive) setClaude(j); }).catch(() => { if (alive) setClaude("error"); });
+    return () => { alive = false; };
+  }, []);
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="text-xl font-semibold">Paramètres</h1>
@@ -18,7 +25,14 @@ export default function Page() {
         </dl>
         {mode === "supabase" ? <Button className="mt-4" onClick={() => void signOut()}><LogOut size={15} aria-hidden /> Se déconnecter</Button> : null}
       </section>
-      <p className="text-sm text-muted">Les réglages des modèles de messages, des séquences, des offres et de la clé Claude s’ajouteront avec les étapes correspondantes.</p>
+      <section className="rounded-2xl border border-border bg-surface p-5" aria-labelledby="p-claude">
+        <h2 id="p-claude" className="text-sm font-semibold">Claude (rédaction des messages)</h2>
+        <p className="mt-3 text-sm" role="status">
+          {claude === null ? "Vérification…" : claude === "error" ? "État indisponible pour le moment." : claude.configured ? `Clé configurée. Modèle utilisé : ${claude.model}.` : "Clé non configurée : le bouton « Réécrire avec Claude » est désactivé, les modèles restent utilisables."}
+        </p>
+        <p className="mt-2 text-xs text-muted">La clé reste côté serveur : elle se règle dans Vercel (Settings → Environment Variables → <code>ANTHROPIC_API_KEY</code>), puis un redéploiement. Le détail est dans le README.</p>
+      </section>
+      <p className="text-sm text-muted">Les réglages des séquences, des offres et des colonnes du pipeline s’ajouteront avec les étapes correspondantes.</p>
     </div>
   );
 }

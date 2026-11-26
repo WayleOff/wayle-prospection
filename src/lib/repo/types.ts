@@ -1,4 +1,4 @@
-import type { Activity, ActivityKind, Channel, Goal, Prospect, ProspectInput, ProspectPatch, Reference } from "../types";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, SentMessage, Template, TemplateInput } from "../types";
 
 /**
  * Accès aux données. Deux implémentations : Supabase (production) et mémoire (mode démonstration,
@@ -18,5 +18,12 @@ export interface Repo {
   listActivitiesSince(iso: string): Promise<Activity[]>;
   getGoal(month: string): Promise<Goal | null>;
   setGoal(goal: Goal): Promise<Goal>;
+  listTemplates(): Promise<Template[]>;
+  saveTemplate(t: TemplateInput): Promise<Template>;
+  deleteTemplate(id: string): Promise<void>;
+  /** Enregistre un message envoyé (sent_at = maintenant). */
+  addMessage(m: MessageInput, authorId: string | null): Promise<SentMessage>;
+  deleteMessage(id: string): Promise<void>;
+  listMessages(limit: number): Promise<SentMessage[]>;
   signOut(): Promise<void>;
 }

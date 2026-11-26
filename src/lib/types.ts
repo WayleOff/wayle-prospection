@@ -72,3 +72,22 @@ export interface Reference {
 
 /** Objectif d'un mois (month = premier jour du mois, AAAA-MM-01). Montants en centimes. */
 export interface Goal { month: string; revenue_cents: number; contacts: number }
+
+/** Modèle de message : texte de départ par canal, avec variables {prénom}, {nom_commerce}, {détail_remarqué}, {offre}, {quartier}. */
+export interface Template { id: string; name: string; channel: Channel; category_id: string | null; tone: Tone; body: string }
+export type TemplateInput = Omit<Template, "id"> & { id?: string };
+
+/** Message préparé ou envoyé à un prospect. */
+export interface SentMessage {
+  id: string;
+  prospect_id: string;
+  template_id: string | null;
+  channel: Channel;
+  variant: number;
+  body: string;
+  written_by_ai: boolean;
+  sent_at: string | null;
+  author_id: string | null;
+  created_at: string;
+}
+export type MessageInput = Pick<SentMessage, "prospect_id" | "template_id" | "channel" | "variant" | "body" | "written_by_ai">;

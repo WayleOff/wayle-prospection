@@ -3,8 +3,12 @@
 Outil de prospection de Wayle Production (vidéaste, Rouen), pensé comme un petit CRM : fiches prospects, pipeline, relances, messages générés avec Claude, offres et devis.
 Interface en français, utilisable sur ordinateur et sur téléphone.
 
-**État : étape (a) — connexion, fiches prospects, liste filtrable, ajout rapide avec détection de doublons, historique, barre de commande (Ctrl/Cmd + K).**
-Les écrans Aujourd'hui, Pipeline, Carte, Messages, Offres et Statistiques affichent « Pas encore construit » et seront ajoutés étape par étape.
+**État : étape (c).**
+- (a) Connexion, fiches prospects, liste filtrable, ajout rapide avec détection de doublons, historique, barre de commande (Ctrl/Cmd + K).
+- (b) « Aujourd'hui » (actions du jour, indicateurs, objectif du mois) et pipeline en colonnes (glisser-déposer, clavier, filtres).
+- (c) Générateur de messages : modèles par canal, ton et catégorie, réécriture par Claude (3 variantes), « Copier et marquer comme envoyé » (historique, relance à J+3).
+
+Les écrans Carte, Offres et Statistiques affichent « Pas encore construit » et seront ajoutés étape par étape.
 
 ## Essayer tout de suite (sans compte)
 
@@ -23,6 +27,7 @@ Le mode démonstration charge 15 prospects fictifs de Rouen et garde vos modific
 | `N` | Nouveau prospect |
 | `/` | Aller à la recherche |
 | `R` | Planifier une relance (fiche ouverte) |
+| `M` | Générer un message (fiche ouverte) |
 | `Ctrl/Cmd + Z` | Annuler la dernière action annulable |
 | `Échap` | Fermer la fiche ou la fenêtre |
 
@@ -36,14 +41,15 @@ Le mode démonstration charge 15 prospects fictifs de Rouen et garde vos modific
 4. **Modèles d'e-mail** (Authentication → Email Templates), pour « Magic Link » et « Invite user » : remplacer le lien par
    `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink` (et `type=invite` pour l'invitation).
 5. **Vercel** — importer le dépôt GitHub, ajouter `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Project Settings → API), déployer.
-6. **Sauvegarde** — le plan gratuit de Supabase met le projet en pause après une semaine sans activité et n'inclut pas de sauvegardes téléchargeables : l'export CSV hebdomadaire (étape ultérieure) sert de filet de sécurité.
+6. **Claude (facultatif, pour « Réécrire avec Claude »)** — créer une clé sur console.anthropic.com (API Keys), puis dans Vercel : Settings → Environment Variables → `ANTHROPIC_API_KEY` (cocher Production), et redéployer. La clé n'est jamais envoyée au navigateur : seul le serveur l'utilise, pour les comptes connectés. Sans clé, les modèles restent utilisables. `ANTHROPIC_MODEL` permet de changer de modèle (par défaut `claude-sonnet-5-5`). Chaque réécriture coûte quelques centimes au plus ; fixer une limite de dépense dans la console Anthropic.
+7. **Sauvegarde** — le plan gratuit de Supabase met le projet en pause après une semaine sans activité et n'inclut pas de sauvegardes téléchargeables : l'export CSV hebdomadaire (étape ultérieure) sert de filet de sécurité.
 
 Les clés secrètes (service role, clé Anthropic) ne doivent jamais être dans le dépôt, ni dans une variable commençant par `NEXT_PUBLIC_`.
 
 ## Sécurité des données
 
 - Chaque table est protégée par des règles *Row Level Security* : seuls les membres de l'équipe (`is_member()`) lisent et écrivent.
-- Les e-mails d'invitation sont dans `team_invites`, illisible depuis le navigateur.
+- Les e-mails d’invitation sont dans `team_invites`, illisible depuis le navigateur.
 - Données de prospection B2B : informer la personne contactée et lui permettre de s'opposer facilement (case « Ne pas contacter » sur la fiche) ; ne pas conserver au-delà de 3 ans après le dernier contact.
 
 ## Développement

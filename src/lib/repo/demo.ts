@@ -1,9 +1,10 @@
-import type { Activity, Goal, Prospect } from "../types";
+import type { Activity, Goal, Prospect, SentMessage, Template } from "../types";
 import type { Repo } from "./types";
 import { DEMO_ACTIVITIES, DEMO_REFERENCE, activityDate, demoProspects } from "./demo-data";
+import { starterTemplates } from "../message";
 
 const KEY = "wayle-prospection-demo-v1";
-interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[] }
+interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[] }
 
 const uid = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
@@ -75,6 +76,29 @@ export function createDemoRepo(): Repo {
       s.goals = [...(s.goals ?? []).filter((g) => g.month !== goal.month), goal]; save();
       return structuredClone(goal);
     },
+    async listTemplates() {
+      const s = load();
+      s.templates ??= starterTemplates(DEMO_REFERENCE.categories).map((t) => ({ ...t, id: uid() }));
+      save();
+      return structuredClone(s.templates);
+    },
+    async saveTemplate(t) {
+      const s = load();
+      s.templates ??= [];
+      const saved: Template = { ...t, id: t.id ?? uid() };
+      s.templates = t.id ? s.templates.map((x) => (x.id === t.id ? saved : x)) : [...s.templates, saved];
+      save();
+      return structuredClone(saved);
+    },
+    async deleteTemplate(id) { const s = load(); s.templates = (s.templates ?? []).filter((t) => t.id !== id); save(); },
+    async addMessage(m, authorId) {
+      const s = load();
+      const msg: SentMessage = { ...m, id: uid(), sent_at: new Date().toISOString(), author_id: authorId, created_at: new Date().toISOString() };
+      s.messages = [msg, ...(s.messages ?? [])]; save();
+      return structuredClone(msg);
+    },
+    async deleteMessage(id) { const s = load(); s.messages = (s.messages ?? []).filter((m) => m.id !== id); save(); },
+    async listMessages(limit) { return structuredClone((load().messages ?? []).slice(0, limit)); },
     async signOut() { /* pas de compte en démonstration */ },
   };
 }
