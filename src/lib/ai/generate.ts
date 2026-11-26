@@ -93,7 +93,11 @@ export async function generateVariants(input: GenerateInput, deps: Deps): Promis
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) throw new AiError(502, "bad_key", "La clé Claude est refusée : vérifie ANTHROPIC_API_KEY sur Vercel.");
     if (res.status === 429) throw new AiError(429, "rate_limited", "Trop de demandes à Claude, réessaie dans une minute.");
-    if (res.status === 400) throw new AiError(502, "bad_request", "Claude a refusé la demande (modèle ou crédit indisponible ?).");
+    // Anthropic explique la raison dans le corps de l'erreur (jamais la clé) : on la montre pour que le réglage soit évident.
+    const detail = ((await res.json().catch(() => null)) as { error?: { message?: string } } | null)?.error?.message ?? "";
+    if (/credit balance/i.test(detail)) throw new AiError(402, "no_credit", "Le crédit du compte Anthropic est épuisé ou absent : ajoute du crédit dans console.anthropic.com (Plans & Billing).");
+    if (res.status === 404 || /model/i.test(detail)) throw new AiError(502, "bad_model", `Modèle refusé par Anthropic${detail ? ` (« ${detail.slice(0, 160)} »)` : ""}. Le nom se règle avec ANTHROPIC_MODEL dans Vercel.`);
+    if (res.status === 400) throw new AiError(502, "bad_request", `Claude a refusé la demande${detail ? ` : ${detail.slice(0, 200)}` : "."}`);
     throw new AiError(502, "upstream", "Claude est indisponible pour le moment.");
   }
   const json = (await res.json().catch(() => null)) as { content?: { type: string; text?: string }[] } | null;

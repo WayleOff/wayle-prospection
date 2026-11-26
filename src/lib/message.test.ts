@@ -81,6 +81,11 @@ describe("Claude", () => {
     expect((bad as AiError).message).not.toContain("sk-secret");
     expect(((await generateVariants(input, { apiKey: "k", fetchImpl: reply(429, {}) }).catch((e) => e)) as AiError).code).toBe("rate_limited");
     expect(((await generateVariants(input, { apiKey: "k", fetchImpl: reply(200, { content: [{ type: "text", text: "bof" }] }) }).catch((e) => e)) as AiError).code).toBe("unreadable");
+    const credit = await generateVariants(input, { apiKey: "k", fetchImpl: reply(400, { error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } }) }).catch((e) => e) as AiError;
+    expect(credit.code).toBe("no_credit");
+    const model = await generateVariants(input, { apiKey: "k", fetchImpl: reply(404, { error: { message: "model: claude-x" } }) }).catch((e) => e) as AiError;
+    expect(model.code).toBe("bad_model");
+    expect(model.message).toContain("claude-x");
     const down = (async () => { throw new Error("réseau"); }) as unknown as typeof fetch;
     expect(((await generateVariants(input, { apiKey: "k", fetchImpl: down }).catch((e) => e)) as AiError).code).toBe("unreachable");
   });
