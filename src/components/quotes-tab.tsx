@@ -19,7 +19,7 @@ export const amountText = (q: Quote) => { const t = totals(q.lines); return t.mo
 
 /** Onglet « Devis » de la page Offres : tous les devis, leur état, leur PDF. */
 export function QuotesTab({ newOpen, onNewClose }: { newOpen: boolean; onNewClose: () => void }) {
-  const { quotes, quotesReady, byId, company, setQuoteStatus, deleteQuote, toast } = useApp();
+  const { quotes, quotesReady, byId, company, logo, setQuoteStatus, deleteQuote, toast } = useApp();
   const router = useRouter(); const pathname = usePathname(); const sp = useSearchParams();
   const [filter, setFilter] = useState<QuoteStatus | "">("");
   const [editing, setEditing] = useState<QuoteDraft | null>(null);
@@ -43,7 +43,7 @@ export function QuotesTab({ newOpen, onNewClose }: { newOpen: boolean; onNewClos
     const p = byId(q.prospect_id);
     if (!p) return;
     setBusyPdf(q.id);
-    try { await downloadQuote(q, p, company); } catch { toast("Le PDF n’a pas pu être créé.", { kind: "error" }); }
+    try { await downloadQuote(q, p, company, logo); } catch { toast("Le PDF n’a pas pu être créé.", { kind: "error" }); }
     setBusyPdf(null);
   };
 
@@ -83,8 +83,8 @@ export function QuotesTab({ newOpen, onNewClose }: { newOpen: boolean; onNewClos
                 </select>
                 <div className="flex gap-1.5">
                   <Button size="sm" disabled={!p || busyPdf === q.id} onClick={() => void pdf(q)} aria-label={`Télécharger le PDF du devis ${q.number}`}><Download size={13} aria-hidden /> PDF</Button>
-                  {q.status === "draft" ? <Button size="sm" onClick={() => setEditing({ id: q.id, prospect_id: q.prospect_id, lines: q.lines, valid_until: q.valid_until, notes: q.notes })} aria-label={`Modifier le devis ${q.number}`}><Pencil size={13} aria-hidden /></Button> : null}
-                  <Button size="sm" onClick={() => setEditing({ prospect_id: q.prospect_id, lines: q.lines, valid_until: null, notes: q.notes })} aria-label={`Dupliquer le devis ${q.number}`} title="Dupliquer"><Copy size={13} aria-hidden /></Button>
+                  {q.status === "draft" ? <Button size="sm" onClick={() => setEditing({ id: q.id, prospect_id: q.prospect_id, lines: q.lines, valid_until: q.valid_until, notes: q.notes, deposit_percent: q.deposit_percent })} aria-label={`Modifier le devis ${q.number}`}><Pencil size={13} aria-hidden /></Button> : null}
+                  <Button size="sm" onClick={() => setEditing({ prospect_id: q.prospect_id, lines: q.lines, valid_until: null, notes: q.notes, deposit_percent: q.deposit_percent })} aria-label={`Dupliquer le devis ${q.number}`} title="Dupliquer"><Copy size={13} aria-hidden /></Button>
                   {confirmDel === q.id
                     ? <Button size="sm" variant="danger" onClick={async () => { if (await deleteQuote(q.id)) setConfirmDel(null); }}>Confirmer</Button>
                     : <Button size="sm" variant="danger" onClick={() => setConfirmDel(q.id)} aria-label={`Supprimer le devis ${q.number}`}><Trash2 size={13} aria-hidden /></Button>}

@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useApp } from "./app-provider";
 import { Button, CloseButton, Dialog, inputCls } from "./ui";
 import { downloadQuote } from "./quote-download";
-import { addDaysISO, companyGaps, eurosText, fmtMoney, lineFromOffer, parseEuros, parseQty, totals } from "@/lib/quote";
+import { addDaysISO, companyGaps, depositSplit, eurosText, fmtMoney, lineFromOffer, parseEuros, parseQty, totals } from "@/lib/quote";
 import { today } from "@/lib/labels";
 import type { Quote, QuoteLine } from "@/lib/types";
 
-export interface QuoteDraft { id?: string; prospect_id: string | null; lines: QuoteLine[]; valid_until: string | null; notes: string | null }
+export interface QuoteDraft { id?: string; prospect_id: string | null; lines: QuoteLine[]; valid_until: string | null; notes: string | null; deposit_percent?: number }
 interface Row { label: string; description: string; qty: string; price: string; recurring: boolean }
 
 const toRow = (l: QuoteLine): Row => ({ label: l.label, description: l.description, qty: String(l.qty).replace(".", ","), price: eurosText(l.unit_cents), recurring: l.recurring });
@@ -20,18 +20,21 @@ function fromRow(r: Row): QuoteLine | null {
 
 /** Création ou modification d'un devis (brouillon). Le numéro est attribué à l'enregistrement. */
 export function QuoteDialog({ value, onClose }: { value: QuoteDraft; onClose: () => void }) {
-  const { prospects, offers, company, createQuote, updateQuote, byId, toast } = useApp();
+  const { prospects, offers, company, logo, createQuote, updateQuote, byId, toast } = useApp();
   const [prospectId, setProspectId] = useState(value.prospect_id ?? "");
   const [filter, setFilter] = useState("");
   const [rows, setRows] = useState<Row[]>(value.lines.map(toRow));
   const [validUntil, setValidUntil] = useState(value.valid_until ?? addDaysISO(today(), company.validity_days));
   const [notes, setNotes] = useState(value.notes ?? "");
+  const [deposit, setDeposit] = useState(String(value.deposit_percent ?? company.default_deposit_percent));
   const [busy, setBusy] = useState(false);
 
   const parsed = rows.map(fromRow);
   const allValid = rows.length > 0 && parsed.every(Boolean);
   const lines = parsed.filter((l): l is QuoteLine => !!l);
   const t = totals(lines);
+  const depositPct = Math.min(100, Math.max(0, Math.round(Number(deposit.replace(",", "."))) || 0));
+  const split = depositSplit(lines, depositPct);
   const gaps = companyGaps(company);
   const prospect = prospectId ? byId(prospectId) : undefined;
   const patch = (i: number, p: Partial<Row>) => setRows((l) => l.map((r, k) => (k === i ? { ...r, ...p } : r)));
@@ -43,10 +46,10 @@ export function QuoteDialog({ value, onClose }: { value: QuoteDraft; onClose: ()
   const save = async (pdf: boolean) => {
     if (!allValid || !prospectId || busy) return;
     setBusy(true);
-    const input = { lines, valid_until: validUntil || null, notes: notes.trim() || null };
+    const input = { lines, valid_until: validUntil || null, notes: notes.trim() || null, deposit_percent: depositPct };
     const saved: Quote | null = value.id ? await updateQuote(value.id, input) : await createQuote({ prospect_id: prospectId, ...input });
     if (saved && pdf && prospect) {
-      try { await downloadQuote(saved, prospect, company); } catch { toast("Devis enregistré, mais le PDF n’a pas pu être créé.", { kind: "error" }); }
+      try { await downloadQuote(saved, prospect, company, logo); } catch { toast("Devis enregistré, mais le PDF n’a pas pu être créé.", { kind: "error" }); }
     }
     setBusy(false);
     if (saved) { if (!pdf) toast(`Devis ${saved.number} enregistré`); onClose(); }
@@ -121,6 +124,14 @@ export function QuoteDialog({ value, onClose }: { value: QuoteDraft; onClose: ()
               <label htmlFor="qd-valid" className="mb-1 block text-xs font-medium text-muted">Valable jusqu’au</label>
               <input id="qd-valid" type="date" className={inputCls} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
             </div>
+            <div>
+              <label htmlFor="qd-deposit" className="mb-1 block text-xs font-medium text-muted">Acompte à la commande (%)</label>
+              <input id="qd-deposit" inputMode="numeric" className={inputCls} value={deposit} onChange={(e) => setDeposit(e.target.value)} aria-describedby="qd-deposit-hint" />
+            </div>
+            <p id="qd-deposit-hint" className="col-span-2 -mt-1 text-xs text-muted" data-testid="deposit-hint">
+              {split ? <>Acompte <strong>{fmtMoney(split.deposit)}</strong> à la commande, solde <strong>{fmtMoney(split.balance)}</strong> à la livraison. 0 = pas d’acompte.</>
+                : t.oneTime <= 0 && t.monthly !== 0 ? "L’acompte ne s’applique qu’aux prestations ponctuelles." : "Pas d’acompte sur ce devis (0 %)."}
+            </p>
           </div>
           <div>
             <label htmlFor="qd-notes" className="mb-1 block text-xs font-medium text-muted">Remarques (imprimées sur le devis)</label>

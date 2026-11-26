@@ -1,4 +1,4 @@
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, SentMessage, Sequence, SequenceInput, Offer, OfferInput, Quote, ScoreRule, SequenceRun, Template, TemplateInput } from "../types";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, SentMessage, Sequence, SequenceInput, Invoice, InvoiceInput, Offer, OfferInput, Quote, ScoreRule, SequenceRun, Template, TemplateInput } from "../types";
 
 /**
  * Accès aux données. Deux implémentations : Supabase (production) et mémoire (mode démonstration,
@@ -46,8 +46,15 @@ export interface Repo {
   listQuotes(): Promise<Quote[]>;
   /** Le numéro est choisi par l'appelant ; un numéro déjà pris fait échouer l'appel (message « duplicate »). */
   createQuote(q: Omit<Quote, "id" | "created_at">): Promise<Quote>;
-  updateQuote(id: string, patch: Partial<Pick<Quote, "lines" | "total_cents" | "status" | "valid_until" | "notes">>): Promise<Quote>;
+  updateQuote(id: string, patch: Partial<Pick<Quote, "lines" | "total_cents" | "status" | "valid_until" | "notes" | "deposit_percent">>): Promise<Quote>;
   deleteQuote(id: string): Promise<void>;
+  listInvoices(): Promise<Invoice[]>;
+  /** Importe des factures d'un coup (lot annulable). Un numéro déjà présent fait échouer l'appel : l'appelant les écarte avant. */
+  importInvoices(rows: InvoiceInput[], mapping: Record<string, string>, skipped: number): Promise<{ batch_id: string; invoices: Invoice[] }>;
+  /** Annule un import de factures : supprime les factures du lot. */
+  undoInvoiceImport(batchId: string): Promise<void>;
+  updateInvoice(id: string, patch: Partial<Pick<Invoice, "prospect_id" | "paid_on">>): Promise<Invoice>;
+  deleteInvoice(id: string): Promise<void>;
   getSetting<T>(key: string): Promise<T | null>;
   setSetting<T>(key: string, value: T): Promise<void>;
   signOut(): Promise<void>;

@@ -116,5 +116,39 @@ insert into settings (key, value) values ('company', '{"siret":"123"}') on confl
 select pg_temp.assert((select value->>'siret' from settings where key = 'company') = '123', 'settings : coordonnées entreprise');
 reset role;
 
+-- Étape f (suite) : acompte et factures importées
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', true);
+update quotes set deposit_percent = 30 where number = 'D-2026-001';
+select pg_temp.assert((select deposit_percent = 30 from quotes where number = 'D-2026-001'), 'acompte : 30 %');
+do $$ begin
+  begin update quotes set deposit_percent = 150 where number = 'D-2026-001'; raise exception 'ÉCHEC : acompte au-dessus de 100 accepté';
+  exception when check_violation then null; end;
+end $$;
+insert into import_batches (origin, column_mapping, created_count, skipped_count) values ('csv', '{"Facture":"number"}', 2, 0);
+insert into invoices (number, prospect_id, client_name, issued_on, paid_on, total_cents, import_batch_id)
+  select 'F-2026-001', p.id, 'Client', current_date, null, 45000, b.id from prospects p, import_batches b where b.origin = 'csv' limit 1;
+insert into invoices (number, client_name, total_cents, kind) values ('AV-2026-001', 'Sans fiche', -5000, 'credit');
+select pg_temp.assert((select count(*) from invoices) = 2, 'factures : 2 créées (une sans prospect)');
+do $$ begin
+  begin insert into invoices (number, client_name, total_cents) values ('F-2026-001', 'Doublon', 1); raise exception 'ÉCHEC : numéro de facture en double accepté';
+  exception when unique_violation then null; end;
+end $$;
+do $$ begin
+  begin insert into invoices (number, client_name, total_cents, kind) values ('X', 'Client', 1, 'autre'); raise exception 'ÉCHEC : type de facture inconnu accepté';
+  exception when check_violation then null; end;
+end $$;
+update invoices set paid_on = current_date where number = 'F-2026-001';
+select pg_temp.assert((select paid_on is not null from invoices where number = 'F-2026-001'), 'factures : marquée payée');
+delete from invoices where import_batch_id is not null;
+select pg_temp.assert((select count(*) from invoices) = 1, 'factures : annulation du lot');
+reset role;
+set local role anon;
+do $$ begin
+  begin perform count(*) from invoices; raise exception 'ÉCHEC : factures lisibles sans connexion';
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+
 rollback;
 \echo TOUS LES TESTS SQL PASSENT

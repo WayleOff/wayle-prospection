@@ -130,11 +130,28 @@ export interface Quote {
   created_at: string;
   valid_until: string | null; // AAAA-MM-JJ
   notes: string | null;
+  /** Acompte à la commande, en % du total ponctuel (0 = pas d'acompte). */
+  deposit_percent: number;
 }
-export type QuoteInput = { prospect_id: string; lines: QuoteLine[]; valid_until: string | null; notes: string | null };
+export type QuoteInput = { prospect_id: string; lines: QuoteLine[]; valid_until: string | null; notes: string | null; deposit_percent: number };
 
 /** Coordonnées de l'entreprise et mentions du devis (table settings, clé « company »). */
 export interface Company {
   name: string; owner: string; address: string; zip_city: string; siret: string; phone: string; email: string;
   vat_mention: string; validity_days: number; payment_terms: string;
+  /** Acompte proposé par défaut sur un nouveau devis, en % (0 = aucun). */
+  default_deposit_percent: number;
 }
+
+/** Logo imprimé sur les devis : image PNG redimensionnée, stockée telle quelle dans les réglages. */
+export interface Logo { data_url: string; width: number; height: number }
+
+export type InvoiceKind = "invoice" | "deposit" | "credit";
+/** Facture de vente importée (Shine ou autre). Montants en centimes ; `paid_on` vide = impayée. */
+export interface Invoice {
+  id: string; number: string; prospect_id: string | null; client_name: string;
+  issued_on: string | null; paid_on: string | null;
+  total_ht_cents: number | null; vat_cents: number | null; total_cents: number;
+  kind: InvoiceKind; source: string; created_at: string;
+}
+export type InvoiceInput = Omit<Invoice, "id" | "created_at">;

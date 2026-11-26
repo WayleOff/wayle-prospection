@@ -1,11 +1,11 @@
 import { writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { addDaysISO, companyGaps, DEFAULT_COMPANY, eurosText, fmtMoney, nextNumber, parseEuros, parseQty, totals } from "./quote";
+import { addDaysISO, companyGaps, DEFAULT_COMPANY, depositSplit, eurosText, fmtMoney, nextNumber, parseEuros, parseQty, totals } from "./quote";
 import { buildQuotePdf } from "./quote-pdf";
 import type { Quote, QuoteLine } from "./types";
 
 const line = (over: Partial<QuoteLine> = {}): QuoteLine => ({ label: "Reel d’essai", description: "", qty: 1, unit_cents: 9000, recurring: false, ...over });
-const quote = (lines: QuoteLine[]): Quote => ({ id: "q", number: "D-2026-001", prospect_id: "p", lines, total_cents: totals(lines).amount, status: "draft", created_at: "2026-11-26T10:00:00Z", valid_until: "2026-12-26", notes: "Tournage prévu en décembre, selon vos disponibilités." });
+const quote = (lines: QuoteLine[]): Quote => ({ id: "q", number: "D-2026-001", prospect_id: "p", lines, total_cents: totals(lines).amount, status: "draft", created_at: "2026-11-26T10:00:00Z", valid_until: "2026-12-26", notes: "Tournage prévu en décembre, selon vos disponibilités.", deposit_percent: 0 });
 
 describe("montants", () => {
   it("format français avec espaces insécables", () => {
@@ -36,6 +36,18 @@ describe("numérotation et dates", () => {
   it("lacunes à signaler", () => expect(companyGaps(DEFAULT_COMPANY)).toEqual(["SIRET", "adresse"]));
 });
 
+describe("acompte", () => {
+  it("porte sur le ponctuel, pas sur l'abonnement", () => {
+    const lines = [line({ unit_cents: 9000, qty: 2 }), line({ label: "Abo", unit_cents: 30000, recurring: true })];
+    expect(depositSplit(lines, 30)).toEqual({ deposit: 5400, balance: 12600 });
+    expect(depositSplit(lines, 0)).toBeNull();
+    expect(depositSplit([line({ recurring: true })], 30)).toBeNull();
+    expect(depositSplit(lines, 100)).toEqual({ deposit: 18000, balance: 0 });
+    expect(depositSplit(lines, 250)?.deposit).toBe(18000); // plafonné à 100 %
+    expect(depositSplit([line({ unit_cents: 3333 })], 30)).toEqual({ deposit: 1000, balance: 2333 }); // arrondi au centime, somme exacte
+  });
+});
+
 describe("PDF", () => {
   const prospect = { name: "Café Sous les Toits", contact_first_name: "Camille", contact_last_name: "Roux", address: "12 rue du Gros-Horloge, 76000 Rouen", email: "contact@exemple.fr", phone: null };
   const company = { ...DEFAULT_COMPANY, siret: "123 456 789 00012", address: "1 rue Exemple" };
@@ -49,5 +61,16 @@ describe("PDF", () => {
     const bytes = await buildQuotePdf(quote(many), prospect, company);
     if (process.env.PDF_OUT) writeFileSync(process.env.PDF_OUT.replace(".pdf", "-long.pdf"), bytes);
     expect(bytes.length).toBeGreaterThan(2000);
+  });
+  it("accepte un logo PNG et un acompte", async () => {
+    // PNG de 40×16 pixels (orange)
+    const png = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAQCAYAAABk1z2tAAAALklEQVR4nGM4YSPyfzBjhoF2wKgDRx040A4YdeCoAwfaAaMOHHXgQDtg1IG0xgBEJjnMZj76/AAAAABJRU5ErkJggg==";
+    const q = { ...quote([line({ unit_cents: 100000 })]), deposit_percent: 30 };
+    const bytes = await buildQuotePdf(q, prospect, company, { data_url: `data:image/png;base64,${png}`, width: 40, height: 16 });
+    expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
+    if (process.env.PDF_OUT) writeFileSync(process.env.PDF_OUT.replace(".pdf", "-logo.pdf"), bytes);
+    // logo abîmé : le devis part quand même
+    const broken = await buildQuotePdf(q, prospect, company, { data_url: "data:image/png;base64,AAAA", width: 1, height: 1 });
+    expect(broken.length).toBeGreaterThan(1000);
   });
 });

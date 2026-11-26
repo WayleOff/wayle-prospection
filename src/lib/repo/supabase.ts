@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Activity, Category, Goal, Profile, Prospect, Offer, Quote, Reference, ScoreRule, SentMessage, Sequence, SequenceRun, SequenceStep, Stage, Tag, Template } from "../types";
+import type { Activity, Category, Goal, Invoice, Profile, Prospect, Offer, Quote, Reference, ScoreRule, SentMessage, Sequence, SequenceRun, SequenceStep, Stage, Tag, Template } from "../types";
 import { normalizeSteps } from "../sequence";
 import type { Repo } from "./types";
 
@@ -13,7 +13,9 @@ const toSequence = (r: SeqRow): Sequence => ({
   id: r.id, name: r.name, is_active: r.is_active,
   steps: [...(r.sequence_steps ?? [])].sort((a, b) => a.step_no - b.step_no).map((s) => ({ ...s, label: s.label ?? "" })),
 });
-const QUOTE_COLS = "id, number, prospect_id, lines, total_cents, status, created_at, valid_until, notes";
+const QUOTE_COLS_BASE = "id, number, prospect_id, lines, total_cents, status, created_at, valid_until, notes";
+const QUOTE_COLS = `${QUOTE_COLS_BASE}, deposit_percent`;
+const INVOICE_COLS = "id, number, prospect_id, client_name, issued_on, paid_on, total_ht_cents, vat_cents, total_cents, kind, source, created_at";
 const OFFER_COLS = "id, name, description, price_cents, is_recurring, is_active";
 const PAGE = 1000; // limite de lignes par requête de l'API Supabase
 
@@ -32,6 +34,7 @@ function fail(error: { message: string } | null): asserts error is null {
 
 /** Implémentation Supabase : les droits par ligne (RLS) de la base décident de ce que chaque compte voit. */
 export function createSupabaseRepo(sb: SupabaseClient): Repo {
+  let depositColumn = true; // devient faux si la migration « acompte » n'est pas appliquée
   return {
     mode: "supabase",
 
@@ -290,25 +293,85 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
     },
 
     async listQuotes() {
-      const { data, error } = await sb.from("quotes").select(QUOTE_COLS).order("created_at", { ascending: false }).limit(2000);
-      fail(error);
-      return data as Quote[];
+      // Base pas encore mise à jour pour l'acompte ? On lit sans cette colonne : les devis restent utilisables en attendant la migration.
+      const read = (cols: string) => sb.from("quotes").select(cols).order("created_at", { ascending: false }).limit(2000);
+      let res = await read(QUOTE_COLS);
+      if (res.error && /deposit_percent/.test(res.error.message)) {
+        depositColumn = false;
+        res = await read(QUOTE_COLS_BASE);
+      }
+      fail(res.error);
+      return (res.data as unknown as Quote[]).map((q) => ({ ...q, deposit_percent: q.deposit_percent ?? 0 }));
     },
 
     async createQuote(q) {
-      const { data, error } = await sb.from("quotes").insert(q).select(QUOTE_COLS).single();
+      const { deposit_percent: _dp, ...rest } = q; void _dp;
+      const cols: string = depositColumn ? QUOTE_COLS : QUOTE_COLS_BASE;
+      const { data, error } = await sb.from("quotes").insert(depositColumn ? q : rest).select(cols).single();
       fail(error);
-      return data as Quote;
+      const row = data as unknown as Quote;
+      return { ...row, deposit_percent: row.deposit_percent ?? 0 };
     },
 
     async updateQuote(id, patch) {
-      const { data, error } = await sb.from("quotes").update(patch).eq("id", id).select(QUOTE_COLS).single();
+      const { deposit_percent: _dp, ...rest } = patch; void _dp;
+      const cols: string = depositColumn ? QUOTE_COLS : QUOTE_COLS_BASE;
+      const { data, error } = await sb.from("quotes").update(depositColumn ? patch : rest).eq("id", id).select(cols).single();
       fail(error);
-      return data as Quote;
+      const row = data as unknown as Quote;
+      return { ...row, deposit_percent: row.deposit_percent ?? 0 };
     },
 
     async deleteQuote(id) {
       const { error } = await sb.from("quotes").delete().eq("id", id);
+      fail(error);
+    },
+
+    async listInvoices() {
+      const out: Invoice[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await sb.from("invoices").select(INVOICE_COLS).order("issued_on", { ascending: false, nullsFirst: false }).order("number").range(from, from + PAGE - 1);
+        fail(error);
+        out.push(...(data as Invoice[]));
+        if (data.length < PAGE) break;
+      }
+      return out;
+    },
+
+    async importInvoices(rows, mapping, skipped) {
+      const batch = await sb.from("import_batches").insert({ origin: "csv", column_mapping: mapping, created_count: rows.length, skipped_count: skipped }).select("id").single();
+      fail(batch.error);
+      const batchId = (batch.data as { id: string }).id;
+      const invoices: Invoice[] = [];
+      try {
+        for (let i = 0; i < rows.length; i += 200) {
+          const { data, error } = await sb.from("invoices").insert(rows.slice(i, i + 200).map((r) => ({ ...r, import_batch_id: batchId }))).select(INVOICE_COLS);
+          fail(error);
+          invoices.push(...(data as Invoice[]));
+        }
+      } catch (e) {
+        await sb.from("invoices").delete().eq("import_batch_id", batchId);
+        await sb.from("import_batches").update({ undone_at: new Date().toISOString() }).eq("id", batchId);
+        throw e;
+      }
+      return { batch_id: batchId, invoices };
+    },
+
+    async undoInvoiceImport(batchId) {
+      const { error } = await sb.from("invoices").delete().eq("import_batch_id", batchId);
+      fail(error);
+      const done = await sb.from("import_batches").update({ undone_at: new Date().toISOString() }).eq("id", batchId);
+      fail(done.error);
+    },
+
+    async updateInvoice(id, patch) {
+      const { data, error } = await sb.from("invoices").update(patch).eq("id", id).select(INVOICE_COLS).single();
+      fail(error);
+      return data as Invoice;
+    },
+
+    async deleteInvoice(id) {
+      const { error } = await sb.from("invoices").delete().eq("id", id);
       fail(error);
     },
 

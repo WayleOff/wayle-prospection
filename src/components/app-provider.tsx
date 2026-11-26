@@ -6,7 +6,7 @@ import { isMessageAction, planAfter, planStart, progressOf, stageStopsSequence, 
 import { RELANCE_DAYS } from "@/lib/message";
 import { fmtMoney, mergeCompany, nextNumber, STATUS_LABEL, totals } from "@/lib/quote";
 import { DEFAULT_SCORE_RULES, SCORE_FIELDS, computeScore, mergeRules } from "@/lib/score";
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Company, Offer, OfferInput, Quote, QuoteInput, QuoteStatus, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Company, Invoice, InvoiceInput, Logo, Offer, OfferInput, Quote, QuoteInput, QuoteStatus, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
 
 export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void }
 
@@ -56,12 +56,19 @@ interface AppCtx {
   quotesReady: boolean;
   /** Crée un devis (brouillon) avec le prochain numéro de l'année. */
   createQuote: (input: QuoteInput) => Promise<Quote | null>;
-  updateQuote: (id: string, input: Pick<QuoteInput, "lines" | "valid_until" | "notes">) => Promise<Quote | null>;
+  updateQuote: (id: string, input: Pick<QuoteInput, "lines" | "valid_until" | "notes" | "deposit_percent">) => Promise<Quote | null>;
   /** Change l'état du devis, l'écrit dans l'historique ; « accepté » met à jour le montant de la fiche. */
   setQuoteStatus: (id: string, status: QuoteStatus) => Promise<void>;
   deleteQuote: (id: string) => Promise<boolean>;
   company: Company;
   saveCompany: (c: Company) => Promise<boolean>;
+  logo: Logo | null;
+  saveLogo: (l: Logo | null) => Promise<boolean>;
+  invoices: Invoice[];
+  invoicesReady: boolean;
+  importInvoices: (rows: InvoiceInput[], mapping: Record<string, string>, skipped: number) => Promise<number | null>;
+  updateInvoice: (id: string, patch: Partial<Pick<Invoice, "prospect_id" | "paid_on">>) => Promise<boolean>;
+  deleteInvoice: (id: string) => Promise<boolean>;
   /** Importe les lignes retenues d'un fichier ; le score est calculé ici. Renvoie le nombre de fiches créées (null si échec). Annulable depuis la notification. */
   importProspects: (origin: "csv" | "notion", mapping: Record<string, string>, rows: { input: ProspectInput; tag_ids: string[] }[], skipped: number) => Promise<number | null>;
   /** Critères du score (règles enregistrées + règles de départ). */
@@ -117,6 +124,10 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const [quotesReady, setQuotesReady] = useState(false);
   const quotesRef = useRef<Quote[]>([]);
   const [company, setCompany] = useState<Company>(mergeCompany(null));
+  const [logo, setLogo] = useState<Logo | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoicesReady, setInvoicesReady] = useState(false);
+  const invoicesRef = useRef<Invoice[]>([]);
   const prospectsRef = useRef<Prospect[]>([]);
   useEffect(() => { prospectsRef.current = prospects; }, [prospects]);
 
@@ -179,7 +190,10 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     let alive = true;
     repo.listOffers().then((o) => { if (alive) setOffers(o); }).catch(() => undefined);
     repo.getSetting<Partial<Company>>("company").then((c) => { if (alive) setCompany(mergeCompany(c)); }).catch(() => undefined);
+    repo.getSetting<Partial<Logo>>("logo").then((l) => { if (alive) setLogo(l?.data_url ? (l as Logo) : null); }).catch(() => undefined);
     repo.listQuotes().then((q) => { if (!alive) return; quotesRef.current = q; setQuotes(q); setQuotesReady(true); }).catch(() => { if (alive) setQuotesReady(false); });
+    // Les factures viennent de la migration « acompte et factures » : tant qu'elle manque, l'onglet l'explique.
+    repo.listInvoices().then((l) => { if (!alive) return; invoicesRef.current = l; setInvoices(l); setInvoicesReady(true); }).catch(() => { if (alive) setInvoicesReady(false); });
     return () => { alive = false; };
   }, [ready, repo]);
 
@@ -412,6 +426,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
           }
           quotesRef.current = [created, ...quotesRef.current];
           setQuotes(quotesRef.current);
+          if (input.deposit_percent > 0 && created.deposit_percent === 0) toast("Acompte non enregistré : la base doit être mise à jour (onglet Factures).", { kind: "error" });
           await addActivity(input.prospect_id, { kind: "note", body: `Devis ${created.number} créé (${fmtMoney(total)})` });
           return created;
         } catch (e) { fail(e, "Devis non créé"); return null; }
@@ -421,6 +436,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
           const saved = await repo.updateQuote(id, { ...input, total_cents: totals(input.lines).amount });
           quotesRef.current = quotesRef.current.map((q) => (q.id === id ? saved : q));
           setQuotes(quotesRef.current);
+          if (input.deposit_percent > 0 && saved.deposit_percent === 0) toast("Acompte non enregistré : la base doit être mise à jour (onglet Factures).", { kind: "error" });
           return saved;
         } catch (e) { fail(e, "Devis non enregistré"); return null; }
       },
@@ -457,6 +473,47 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       async saveCompany(c) {
         try { await repo.setSetting("company", c); setCompany(c); return true; }
         catch (e) { fail(e, "Coordonnées non enregistrées"); return false; }
+      },
+      logo,
+      async saveLogo(l) {
+        try { await repo.setSetting("logo", l ?? {}); setLogo(l); return true; }
+        catch (e) { fail(e, "Logo non enregistré"); return false; }
+      },
+      invoices, invoicesReady,
+      async importInvoices(rows, mapping, skipped) {
+        if (rows.length === 0) return 0;
+        try {
+          const { batch_id, invoices: created } = await repo.importInvoices(rows, mapping, skipped);
+          invoicesRef.current = [...created, ...invoicesRef.current];
+          setInvoices(invoicesRef.current);
+          toast(`${created.length} facture${created.length > 1 ? "s" : ""} importée${created.length > 1 ? "s" : ""}`, {
+            undo: async () => {
+              try {
+                await repo.undoInvoiceImport(batch_id);
+                const ids = new Set(created.map((i) => i.id));
+                invoicesRef.current = invoicesRef.current.filter((i) => !ids.has(i.id));
+                setInvoices(invoicesRef.current);
+              } catch (e) { fail(e, "Annulation impossible"); }
+            },
+          });
+          return created.length;
+        } catch (e) { fail(e, "Import des factures impossible"); return null; }
+      },
+      async updateInvoice(id, patch) {
+        try {
+          const saved = await repo.updateInvoice(id, patch);
+          invoicesRef.current = invoicesRef.current.map((i) => (i.id === id ? saved : i));
+          setInvoices(invoicesRef.current);
+          return true;
+        } catch (e) { fail(e, "Facture non modifiée"); return false; }
+      },
+      async deleteInvoice(id) {
+        try {
+          await repo.deleteInvoice(id);
+          invoicesRef.current = invoicesRef.current.filter((i) => i.id !== id);
+          setInvoices(invoicesRef.current);
+          return true;
+        } catch (e) { fail(e, "Suppression impossible"); return false; }
       },
       async importProspects(origin, mapping, rows, skipped) {
         if (rows.length === 0) return 0;
@@ -523,7 +580,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       toasts, toast, dismissToast, undoLast,
       quickAddOpen, setQuickAddOpen, paletteOpen, setPaletteOpen,
     };
-  }, [ready, repo, prospects, scoreRules, offers, quotes, quotesReady, company, sequences, runs, sequencesReady, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
+  }, [ready, repo, prospects, scoreRules, offers, quotes, quotesReady, company, logo, invoices, invoicesReady, sequences, runs, sequencesReady, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
 
   if (state.status === "loading") return <>{fallback({ status: "loading" })}</>;
   if (state.status === "error") return <>{fallback(state)}</>;

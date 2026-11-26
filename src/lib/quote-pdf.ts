@@ -1,11 +1,12 @@
-import type { Company, Prospect, Quote } from "./types";
-import { fmtDateFr, fmtMoney, lineTotal, totals } from "./quote";
+import type { Company, Logo, Prospect, Quote } from "./types";
+import { depositSplit, fmtDateFr, fmtMoney, lineTotal, totals } from "./quote";
+import { logoBytes } from "./logo";
 
 const W = 595.28, H = 841.89, M = 48; // A4 en points, marges
 const FOOT = 56; // place réservée au pied de page
 
 /** Génère le PDF du devis (A4). pdf-lib est chargé à la demande : il ne pèse pas sur le reste de l'application. */
-export async function buildQuotePdf(quote: Quote, prospect: Pick<Prospect, "name" | "contact_first_name" | "contact_last_name" | "address" | "email" | "phone">, company: Company): Promise<Uint8Array> {
+export async function buildQuotePdf(quote: Quote, prospect: Pick<Prospect, "name" | "contact_first_name" | "contact_last_name" | "address" | "email" | "phone">, company: Company, logo: Logo | null = null): Promise<Uint8Array> {
   const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const doc = await PDFDocument.create();
   const reg = await doc.embedFont(StandardFonts.Helvetica);
@@ -39,8 +40,19 @@ export async function buildQuotePdf(quote: Quote, prospect: Pick<Prospect, "name
   const rule = (yy: number, color = line, thickness = 0.7) => page.drawLine({ start: { x: M, y: yy }, end: { x: W - M, y: yy }, thickness, color });
 
   // ── En-tête : entreprise à gauche, devis à droite
-  text(company.name, M, 18, bold);
   const top = y;
+  const png = logoBytes(logo);
+  if (png) {
+    // Logo en haut à gauche, dans une boîte de 150 × 56 pt : on garde ses proportions.
+    try {
+      const img = await doc.embedPng(png);
+      const k = Math.min(150 / img.width, 56 / img.height, 3);
+      const w = img.width * k, h = img.height * k;
+      page.drawImage(img, { x: M, y: y - h, width: w, height: h });
+      y -= h + 20;
+    } catch { /* logo illisible : le devis part sans */ }
+  }
+  text(company.name, M, 18, bold);
   y -= 18;
   for (const l of [company.owner, company.address, company.zip_city, company.phone, company.email].filter((v) => v.trim())) { text(l, M, 9, reg, muted); y -= 12.5; }
   const leftBottom = y;
@@ -103,6 +115,15 @@ export async function buildQuotePdf(quote: Quote, prospect: Pick<Prospect, "name
     textRight(value, colTot, 13, bold, accent);
     y -= 21;
   }
+  const split = depositSplit(quote.lines, quote.deposit_percent);
+  if (split) {
+    textRight(`Acompte à la commande (${quote.deposit_percent} %)`, colUnit + 15, 10, reg, muted);
+    textRight(fmtMoney(split.deposit), colTot, 10.5, bold);
+    y -= 16;
+    textRight("Solde à la livraison", colUnit + 15, 10, reg, muted);
+    textRight(fmtMoney(split.balance), colTot, 10.5, bold);
+    y -= 18;
+  }
   if (company.vat_mention.trim()) { textRight(company.vat_mention, colTot, 8.5, reg, muted); y -= 20; } else y -= 8;
 
   // ── Notes, conditions, accord
@@ -114,7 +135,9 @@ export async function buildQuotePdf(quote: Quote, prospect: Pick<Prospect, "name
     y -= 10;
   };
   if (quote.notes?.trim()) block("Remarques", quote.notes.trim());
-  block("Conditions", [company.payment_terms.trim(), quote.valid_until ? `Devis valable jusqu’au ${fmtDateFr(quote.valid_until)}.` : ""].filter(Boolean).join("\n"));
+  block("Conditions", [
+    split ? `Acompte de ${quote.deposit_percent} % (${fmtMoney(split.deposit)}) à régler à la commande ; solde de ${fmtMoney(split.balance)} à la livraison.` : "",
+    company.payment_terms.trim(), quote.valid_until ? `Devis valable jusqu’au ${fmtDateFr(quote.valid_until)}.` : ""].filter(Boolean).join("\n"));
 
   const boxH = 74;
   if (y - boxH - 30 < M + FOOT) newPage();

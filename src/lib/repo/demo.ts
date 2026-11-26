@@ -1,11 +1,11 @@
-import type { Activity, Goal, Offer, Prospect, Quote, ScoreRule, SentMessage, Sequence, SequenceRun, Template } from "../types";
+import type { Activity, Goal, Invoice, Offer, Prospect, Quote, ScoreRule, SentMessage, Sequence, SequenceRun, Template } from "../types";
 import type { Repo } from "./types";
 import { DEMO_ACTIVITIES, DEMO_REFERENCE, activityDate, demoProspects } from "./demo-data";
 import { starterTemplates } from "../message";
 import { normalizeSteps } from "../sequence";
 
 const KEY = "wayle-prospection-demo-v1";
-interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[]; sequences?: Sequence[]; runs?: SequenceRun[]; scoreRules?: ScoreRule[]; batches?: Record<string, string[]>; offers?: Offer[]; quotes?: Quote[]; settings?: Record<string, unknown> }
+interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[]; sequences?: Sequence[]; runs?: SequenceRun[]; scoreRules?: ScoreRule[]; batches?: Record<string, string[]>; offers?: Offer[]; quotes?: Quote[]; settings?: Record<string, unknown>; invoices?: Invoice[]; invoiceBatches?: Record<string, string[]> }
 
 const uid = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
@@ -172,7 +172,7 @@ export function createDemoRepo(): Repo {
     async createQuote(q) {
       const s = load(); const list = (s.quotes ??= []);
       if (list.some((x) => x.number === q.number)) throw new Error('duplicate key value violates unique constraint "quotes_number_key"');
-      const row: Quote = { ...q, id: uid(), created_at: new Date().toISOString() };
+      const row: Quote = { ...q, deposit_percent: q.deposit_percent ?? 0, id: uid(), created_at: new Date().toISOString() };
       list.push(row); save(); return structuredClone(row);
     },
     async updateQuote(id, patch) {
@@ -181,6 +181,30 @@ export function createDemoRepo(): Repo {
       Object.assign(row, patch); save(); return structuredClone(row);
     },
     async deleteQuote(id) { const s = load(); s.quotes = (s.quotes ?? []).filter((q) => q.id !== id); save(); },
+    async listInvoices() { return structuredClone(load().invoices ?? []).sort((a, b) => (b.issued_on ?? "").localeCompare(a.issued_on ?? "") || a.number.localeCompare(b.number)); },
+    async importInvoices(rows, mapping, skipped) {
+      void mapping; void skipped;
+      const s = load(); const list = (s.invoices ??= []);
+      const dup = rows.find((r) => list.some((x) => x.number === r.number));
+      if (dup) throw new Error(`duplicate key value violates unique constraint "invoices_number_key" (${dup.number})`);
+      const now = new Date().toISOString();
+      const created: Invoice[] = rows.map((r) => ({ ...r, id: uid(), created_at: now }));
+      list.push(...created);
+      const batchId = uid();
+      (s.invoiceBatches ??= {})[batchId] = created.map((i) => i.id);
+      save();
+      return { batch_id: batchId, invoices: structuredClone(created) };
+    },
+    async undoInvoiceImport(batchId) {
+      const s = load(); const ids = s.invoiceBatches?.[batchId] ?? [];
+      s.invoices = (s.invoices ?? []).filter((i) => !ids.includes(i.id)); save();
+    },
+    async updateInvoice(id, patch) {
+      const row = (load().invoices ?? []).find((i) => i.id === id);
+      if (!row) throw new Error("Facture introuvable");
+      Object.assign(row, patch); save(); return structuredClone(row);
+    },
+    async deleteInvoice(id) { const s = load(); s.invoices = (s.invoices ?? []).filter((i) => i.id !== id); save(); },
     async getSetting<T>(key: string) { return (structuredClone(load().settings?.[key]) ?? null) as T | null; },
     async setSetting(key, value) { const s = load(); (s.settings ??= {})[key] = structuredClone(value); save(); },
     async signOut() { /* pas de compte en démonstration */ },

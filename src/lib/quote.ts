@@ -9,6 +9,7 @@ export const DEFAULT_COMPANY: Company = {
   phone: "07 86 85 81 14", email: "waylecorp@gmail.com",
   vat_mention: "TVA non applicable, art. 293 B du CGI", validity_days: 30,
   payment_terms: "Paiement à réception de la facture, par virement.",
+  default_deposit_percent: 30,
 };
 
 export const mergeCompany = (stored: Partial<Company> | null): Company => ({ ...DEFAULT_COMPANY, ...(stored ?? {}) });
@@ -19,6 +20,15 @@ export function companyGaps(c: Company): string[] {
   if (!c.siret.trim()) gaps.push("SIRET");
   if (!c.address.trim()) gaps.push("adresse");
   return gaps;
+}
+
+/** Acompte et solde d'un devis : l'acompte porte sur le total ponctuel (les mensualités se facturent chaque mois). */
+export function depositSplit(lines: QuoteLine[], percent: number): { deposit: number; balance: number } | null {
+  const { oneTime } = totals(lines);
+  const pct = Math.min(100, Math.max(0, Math.round(percent) || 0));
+  if (pct === 0 || oneTime <= 0) return null;
+  const deposit = Math.round((oneTime * pct) / 100);
+  return { deposit, balance: oneTime - deposit };
 }
 
 export const lineTotal = (l: QuoteLine) => Math.round(l.qty * l.unit_cents);

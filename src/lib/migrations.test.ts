@@ -1,0 +1,9 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { INVOICES_SQL } from "./migrations";
+
+describe("SQL affiché dans l'application", () => {
+  it("est identique à la migration du dépôt", () => {
+    expect(INVOICES_SQL).toBe(readFileSync("supabase/migrations/20261129000000_invoices_deposits.sql", "utf8"));
+  });
+});

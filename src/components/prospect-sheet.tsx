@@ -7,7 +7,8 @@ import { Button, CloseButton, Dialog, Dot, inputCls } from "./ui";
 import { MessageComposer } from "./message-composer";
 import { QuoteDialog } from "./quote-dialog";
 import { downloadQuote } from "./quote-download";
-import { STATUS_LABEL, fmtDateFr, lineFromOffer } from "@/lib/quote";
+import { STATUS_LABEL, fmtDateFr, fmtMoney, lineFromOffer } from "@/lib/quote";
+import { invoiceStats } from "@/lib/invoice-import";
 import { amountText } from "./quotes-tab";
 import { stepText } from "@/lib/sequence";
 import { computeScore } from "@/lib/score";
@@ -113,7 +114,7 @@ function SequenceBlock({ p }: { p: Prospect }) {
 
 /** Devis du prospect : liste, PDF, création. */
 function QuoteBlock({ p }: { p: Prospect }) {
-  const { quotes, quotesReady, offers, company, toast } = useApp();
+  const { quotes, quotesReady, offers, company, logo, toast } = useApp();
   const [open, setOpen] = useState(false);
   if (!quotesReady) return null; // migration de l'étape f pas encore appliquée : la page Offres l'explique
   const mine = quotes.filter((q) => q.prospect_id === p.id);
@@ -133,12 +134,38 @@ function QuoteBlock({ p }: { p: Prospect }) {
               <span className="tabular-nums">{amountText(q)}</span>
               <span className="rounded-full bg-subtle px-2 py-0.5 text-xs">{STATUS_LABEL[q.status]}</span>
               <Button size="sm" className="ml-auto" aria-label={`Télécharger le PDF du devis ${q.number}`}
-                onClick={() => { downloadQuote(q, p, company).catch(() => toast("Le PDF n’a pas pu être créé.", { kind: "error" })); }}><Download size={13} aria-hidden /> PDF</Button>
+                onClick={() => { downloadQuote(q, p, company, logo).catch(() => toast("Le PDF n’a pas pu être créé.", { kind: "error" })); }}><Download size={13} aria-hidden /> PDF</Button>
             </li>
           ))}
         </ul>
       )}
       {open ? <QuoteDialog value={{ prospect_id: p.id, lines: first ? [lineFromOffer(first)] : [], valid_until: null, notes: null }} onClose={() => setOpen(false)} /> : null}
+    </section>
+  );
+}
+
+/** Factures importées de ce prospect : ce qui est facturé, encaissé, à encaisser. */
+function InvoiceBlock({ p }: { p: Prospect }) {
+  const { invoices, invoicesReady } = useApp();
+  const mine = invoices.filter((i) => i.prospect_id === p.id);
+  if (!invoicesReady || mine.length === 0) return null;
+  const st = invoiceStats(mine);
+  return (
+    <section aria-labelledby="s-factures" className="space-y-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 id="s-factures" className={SECTION}>Factures</h3>
+        <p className="text-xs text-muted" data-testid="sheet-invoice-stats">Facturé {fmtMoney(st.billed)} · {st.unpaid > 0 ? `à encaisser ${fmtMoney(st.unpaid)}` : "tout est encaissé"}</p>
+      </div>
+      <ul className="divide-y divide-border rounded-xl border border-border">
+        {mine.map((i) => (
+          <li key={i.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+            <span className="font-medium">{i.number}</span>
+            <span className="text-xs text-muted">{i.issued_on ? fmtDateFr(i.issued_on) : "date inconnue"}</span>
+            <span className="tabular-nums">{fmtMoney(i.total_cents)}</span>
+            <span className={`ml-auto rounded-full px-2 py-0.5 text-xs ${i.paid_on ? "bg-green-500/15 text-green-700 dark:text-green-300" : "bg-amber-500/15 text-amber-700 dark:text-amber-300"}`}>{i.paid_on ? `Payée le ${fmtDateFr(i.paid_on)}` : "À encaisser"}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -243,6 +270,7 @@ function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
         </section>
 
         <QuoteBlock p={p} />
+        <InvoiceBlock p={p} />
 
         {/* Coordonnées */}
         <section aria-labelledby="s-coord" className="space-y-3">

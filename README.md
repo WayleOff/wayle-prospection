@@ -43,11 +43,21 @@ Prospects → **Importer**.
 ## Offres et devis
 
 - **Offres** (Offres → onglet Offres) : le catalogue (nom, description, prix, mensuel ou non). L'offre de départ est le reel d'essai à 90 €.
-- **Mon entreprise** (Paramètres) : nom, adresse, SIRET, téléphone, e-mail, mention de TVA, durée de validité, conditions de paiement. Tout est imprimé sur le PDF. L'adresse et le SIRET sont obligatoires sur un devis ; la mention de TVA par défaut est celle de la franchise en base (art. 293 B du CGI) : à faire valider par un comptable.
+- **Mon entreprise** (Paramètres) : nom, adresse, SIRET, téléphone, e-mail, mention de TVA, durée de validité, conditions de paiement, acompte proposé par défaut, et le **logo** (PNG, JPEG, WebP ou SVG, réduit et converti en PNG dans le navigateur, imprimé en haut à gauche). Tout est imprimé sur le PDF. L'adresse et le SIRET sont obligatoires sur un devis ; la mention de TVA par défaut est celle de la franchise en base (art. 293 B du CGI) : à faire valider par un comptable.
 - **Créer un devis** : depuis la fiche d'un prospect (section Devis) ou depuis Offres → Devis → Nouveau devis. On ajoute des offres du catalogue ou des lignes libres (quantité, prix unitaire, case « facturé chaque mois » ; un prix négatif sert de remise), une date de validité et des remarques. Le numéro est attribué à l'enregistrement.
 - **PDF** : généré dans le navigateur (rien n'est envoyé), bouton PDF sur la fiche et dans la liste des devis.
 - **États** : un brouillon se modifie ; un devis envoyé, accepté ou refusé se duplique. Chaque changement d'état est noté dans l'historique du prospect et se défait avec « Annuler ». **Accepté** met à jour le montant de la fiche (prestations ponctuelles + un mois des lignes mensuelles), donc le « CA signé » d'Aujourd'hui une fois le prospect passé à « Gagné ».
-- Limite : l'outil ne gère pas les factures.
+- **Acompte** : chaque devis a un pourcentage d'acompte (30 % par défaut, réglable dans Paramètres et sur chaque devis, 0 = aucun). Il porte sur les prestations ponctuelles, pas sur l'abonnement mensuel. Le PDF affiche « Acompte à la commande » et « Solde à la livraison » et le rappelle dans les conditions. L'outil ne crée pas la facture d'acompte : elle se fait dans Shine.
+
+## Factures (import depuis Shine)
+
+L'outil ne fabrique pas de factures : il importe celles de Shine pour voir ce qui est encaissé et ce qui reste à encaisser.
+
+- Dans Shine : **Rapports → Rapport de ventes → Exporter → .csv**. Dans l'outil : Offres → onglet **Factures** → Importer des factures. Même principe que l'import de prospects : correspondance des colonnes devinée d'après les titres (modifiable), aperçu, puis import. Il faut au minimum le numéro de facture et un montant (TTC, ou HT + TVA). Les en-têtes exacts de l'export Shine ne sont pas documentés : en cas de colonne mal reconnue, on la corrige dans la liste déroulante.
+- **Doublons** : un numéro déjà importé est ignoré, on peut donc réimporter un rapport plus récent sans crainte. L'import s'annule avec « Annuler » juste après.
+- **Rattachement** : le nom du client est comparé (sans accents ni forme juridique : SARL, SAS…) à celui des prospects ; un seul prospect identique, et la facture lui est rattachée. Sinon « Associer à un prospect » à la main. Les factures d'un prospect apparaissent sur sa fiche.
+- **Paiement** : « Payée le … » vient de la colonne date de paiement (ou d'une colonne statut) ; un clic sur l'état bascule payée / à encaisser. Un montant négatif est classé « Avoir » et vient en déduction du total facturé.
+- Limite : seul le CSV est lu (pour un .xlsx : Enregistrer sous → CSV dans Excel).
 
 ## Score des prospects
 
@@ -67,7 +77,7 @@ Chaque fiche a un score de 0 à 100, recalculé automatiquement à chaque modifi
 
 ## Mise en service (vraies données)
 
-1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, `supabase/migrations/20261127000000_sequences.sql` (séquences) et `supabase/migrations/20261128000000_quotes.sql` (devis) — ces deux dernières sont à exécuter aussi sur un projet existant —, puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
+1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, `supabase/migrations/20261127000000_sequences.sql` (séquences) `supabase/migrations/20261128000000_quotes.sql` (devis) et `supabase/migrations/20261129000000_invoices_deposits.sql` (acomptes et factures) — ces trois dernières sont à exécuter aussi sur un projet existant —, puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
 2. **Invitations** — dans l'éditeur SQL, *avant* d'inviter quiconque :
    `insert into team_invites (email) values ('vous@exemple.fr');` (en minuscules). Seules les adresses listées obtiennent un profil ; le prénom affiché est tiré de l'adresse et modifiable dans la table `profiles`.
    Puis, pour chaque personne, créer son compte dans Authentication → Users → *Add user* → *Create new user* (cocher *Auto Confirm User*, mot de passe aléatoire jamais utilisé). Le lien de connexion ne crée jamais de compte : sans cette étape, l'adresse est refusée (« n'est pas invitée »).
