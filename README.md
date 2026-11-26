@@ -93,6 +93,10 @@ Paramètres → **Colonnes du pipeline** : ajouter, renommer, recolorer, réordo
 
 Statistiques → **Exports CSV** : le **bilan des 7 derniers jours** (une ligne par action : date, prospect, type, canal, détail) et **tous les prospects** (une ligne par fiche, tous les champs). Fichiers CSV (séparateur « ; », accents lus par Excel), créés dans le navigateur. C'est le filet de sécurité conseillé : un export par semaine, à ranger dans un dossier. Il n'est pas automatique (l'outil ne tourne pas en tâche de fond).
 
+## Menu clic droit
+
+Sur la liste des prospects, le pipeline et « Aujourd'hui », un clic droit sur un prospect ouvre un menu d'actions rapides : ouvrir la fiche, écrire un message, appeler, ouvrir son Instagram, changer d'étape, de température, programmer une relance (demain, +3 j, +7 j, ou la retirer), « Ne pas contacter » et archiver. Sur écran tactile ou au clavier, le bouton « ⋯ » (colonne Actions, ou en haut à droite de chaque carte mobile) ouvre le même menu. Flèches haut/bas pour naviguer, Échap pour fermer. « Supprimer » = archiver : le prospect disparaît des listes et un bouton « Annuler » le restaure aussitôt.
+
 ## Raccourcis
 
 | Touche | Action |

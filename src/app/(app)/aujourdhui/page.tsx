@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CalendarCheck, Check, ChevronRight, Clock, PenLine, PhoneOff, Target } from "lucide-react";
 import { useApp } from "@/components/app-provider";
 import { MessageComposer } from "@/components/message-composer";
+import { useProspectMenu } from "@/components/prospect-menu";
 import { isMessageAction } from "@/lib/sequence";
 import { Button, CloseButton, Dialog, Dot, Empty, inputCls } from "@/components/ui";
 import { CHANNEL_LABEL, addDays, fmtDue, fmtEuros, today } from "@/lib/labels";
@@ -100,6 +101,7 @@ function Identity({ p, onOpen, line }: { p: Prospect; onOpen: (id: string) => vo
 /** Relance ou action prévue : Fait / Reporter à +2 j / Pas de réponse. */
 function DueRow({ p, onOpen, onWrite }: { p: Prospect; onOpen: (id: string) => void; onWrite: (id: string) => void }) {
   const { update, addActivity, deleteActivity, toast, runFor, completeStep } = useApp();
+  const { onContextMenu } = useProspectMenu();
   const due = fmtDue(p.next_action_at);
   const rf = runFor(p.id);
   const before = { next_action_at: p.next_action_at, next_action_label: p.next_action_label };
@@ -122,7 +124,7 @@ function DueRow({ p, onOpen, onWrite }: { p: Prospect; onOpen: (id: string) => v
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3" onContextMenu={onContextMenu(p.id)}>
       <Identity p={p} onOpen={onOpen} line={<><span className={due?.late ? "font-medium text-danger" : ""}>{due?.text}</span>{p.next_action_label ? ` · ${p.next_action_label}` : ""}{p.preferred_channel ? ` · ${CHANNEL_LABEL[p.preferred_channel]}` : ""}{rf ? ` · séquence ${rf.index}/${rf.total}` : ""}</>} />
       <div className="flex shrink-0 flex-wrap gap-1.5">
         {rf?.step && isMessageAction(rf.step.action) ? <Button size="sm" onClick={() => onWrite(p.id)} title="Ouvre le générateur de message avec le bon modèle"><PenLine size={14} aria-hidden /> Écrire</Button> : null}

@@ -7,6 +7,7 @@ import {
 } from "@dnd-kit/core";
 import { Plus, X } from "lucide-react";
 import { useApp } from "@/components/app-provider";
+import { useProspectMenu } from "@/components/prospect-menu";
 import { Button, Dot, inputCls } from "@/components/ui";
 import { CHANNEL_LABEL, DISTRICT_LABEL, HEAT_COLOR, HEAT_LABEL, fmtDue, fmtEuros } from "@/lib/labels";
 import type { Channel, District, Prospect, Stage } from "@/lib/types";
@@ -140,9 +141,10 @@ function Column({ stage, items, onOpen, dragging }: { stage: Stage; items: Prosp
 }
 
 function Card({ p, onOpen, hidden }: { p: Prospect; onOpen: (id: string) => void; hidden: boolean }) {
+  const { onContextMenu } = useProspectMenu();
   const { attributes, listeners, setNodeRef } = useDraggable({ id: p.id });
   return (
-    <div ref={setNodeRef} {...attributes} {...listeners} onClick={() => onOpen(p.id)}
+    <div ref={setNodeRef} {...attributes} {...listeners} onClick={() => onOpen(p.id)} onContextMenu={onContextMenu(p.id)}
       onKeyDown={(e) => { if (e.key === "Enter") onOpen(p.id); else listeners?.onKeyDown?.(e); }}
       className={`cursor-grab touch-manipulation rounded-xl outline-offset-2 active:cursor-grabbing ${hidden ? "opacity-30" : ""}`}>
       <CardBody p={p} />

@@ -9,6 +9,7 @@ import { QuickAdd } from "./quick-add";
 import { CommandPalette } from "./command-palette";
 import { Toasts } from "./toasts";
 import { ProspectSheet } from "./prospect-sheet";
+import { ProspectMenuProvider } from "./prospect-menu";
 
 export const NAV = [
   { href: "/aujourdhui", label: "Aujourd'hui", icon: CalendarCheck },
@@ -51,7 +52,7 @@ export function Shell({ children }: { children: ReactNode }) {
         )
       }
     >
-      <Frame>{children}</Frame>
+      <ProspectMenuProvider><Frame>{children}</Frame></ProspectMenuProvider>
     </AppProvider>
   );
 }

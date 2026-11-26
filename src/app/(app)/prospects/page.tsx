@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, FileUp, Plus, Search, SearchX, Users, X } from "luc
 import { useApp } from "@/components/app-provider";
 import { Button, Dot, Empty, inputCls } from "@/components/ui";
 import { ImportDialog } from "@/components/import-dialog";
+import { MenuButton, useProspectMenu } from "@/components/prospect-menu";
 import { DISTRICT_LABEL, HEAT_COLOR, HEAT_LABEL, fmtDue } from "@/lib/labels";
 import { normHandle, normText } from "@/lib/normalize";
 import type { Prospect } from "@/lib/types";
@@ -15,6 +16,7 @@ const FILTERS = { cat: "category_id", stage: "stage_id", owner: "owner_id", dist
 
 export default function Page() {
   const { prospects, ref, setQuickAddOpen } = useApp();
+  const { onContextMenu } = useProspectMenu();
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -129,13 +131,13 @@ export default function Page() {
           <div className="mt-4 hidden overflow-hidden rounded-2xl border border-border bg-surface md:block">
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-subtle/60 text-xs text-muted">
-                <tr>{th("name", "Nom")}<th scope="col" className="px-3 py-2 text-left font-medium">Catégorie</th>{th("stage", "Étape")}{th("heat", "Température")}{th("score", "Score", "text-right")}{th("next", "Prochaine action")}<th scope="col" className="px-3 py-2 text-left font-medium">Resp.</th></tr>
+                <tr>{th("name", "Nom")}<th scope="col" className="px-3 py-2 text-left font-medium">Catégorie</th>{th("stage", "Étape")}{th("heat", "Température")}{th("score", "Score", "text-right")}{th("next", "Prochaine action")}<th scope="col" className="px-3 py-2 text-left font-medium">Resp.</th><th scope="col" className="w-10"><span className="sr-only">Actions</span></th></tr>
               </thead>
               <tbody>
                 {rows.map((p) => {
                   const st = stageOf(p.stage_id); const due = fmtDue(p.next_action_at); const ow = ownerOf(p.owner_id);
                   return (
-                    <tr key={p.id} tabIndex={0} onClick={() => open(p.id)} onKeyDown={(e) => { if (e.key === "Enter") open(p.id); }}
+                    <tr key={p.id} tabIndex={0} onClick={() => open(p.id)} onContextMenu={onContextMenu(p.id)} onKeyDown={(e) => { if (e.key === "Enter") open(p.id); }}
                       className="cursor-pointer border-b border-border last:border-0 hover:bg-subtle/70 focus-visible:bg-subtle/70">
                       <td className="px-3 py-2.5"><div className="font-medium">{p.name}</div>{p.instagram ? <div className="text-xs text-muted">{p.instagram}</div> : null}</td>
                       <td className="px-3 py-2.5 text-muted">{catName(p.category_id)}</td>
@@ -144,6 +146,7 @@ export default function Page() {
                       <td className="px-3 py-2.5 text-right tabular-nums">{p.score}</td>
                       <td className="px-3 py-2.5">{due ? <span className={due.late ? "font-medium text-danger" : ""}>{p.next_action_label ? `${p.next_action_label} · ` : ""}{due.text}</span> : <span className="text-muted">—</span>}</td>
                       <td className="px-3 py-2.5">{ow ? <span className="inline-flex items-center gap-1.5"><Dot color={ow.color} />{ow.name}</span> : <span className="text-muted">—</span>}</td>
+                      <td className="px-1 py-1"><MenuButton id={p.id} name={p.name} /></td>
                     </tr>
                   );
                 })}
@@ -156,17 +159,18 @@ export default function Page() {
             {rows.map((p) => {
               const st = stageOf(p.stage_id); const due = fmtDue(p.next_action_at);
               return (
-                <li key={p.id}>
+                <li key={p.id} className="relative" onContextMenu={onContextMenu(p.id)}>
                   <button type="button" onClick={() => open(p.id)} className="w-full rounded-xl border border-border bg-surface p-3.5 text-left active:bg-subtle">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0"><div className="truncate font-medium">{p.name}</div><div className="truncate text-xs text-muted">{[catName(p.category_id), p.instagram].filter(Boolean).join(" · ")}</div></div>
-                      <span className="inline-flex shrink-0 items-center gap-1.5 text-xs"><Dot color={HEAT_COLOR[p.heat]} />{HEAT_LABEL[p.heat]}</span>
+                      <span className="mr-8 inline-flex shrink-0 items-center gap-1.5 text-xs"><Dot color={HEAT_COLOR[p.heat]} />{HEAT_LABEL[p.heat]}</span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2 text-xs">
                       <span className="inline-flex items-center gap-1.5 text-muted">{st ? <Dot color={st.color} /> : null}{st?.name}</span>
                       {due ? <span className={due.late ? "font-medium text-danger" : "text-muted"}>{due.text}</span> : null}
                     </div>
                   </button>
+                  <MenuButton id={p.id} name={p.name} className="absolute right-1.5 top-1.5" />
                 </li>
               );
             })}
