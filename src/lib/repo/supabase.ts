@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Activity, Category, Goal, Profile, Prospect, Reference, SentMessage, Sequence, SequenceRun, SequenceStep, Stage, Tag, Template } from "../types";
+import type { Activity, Category, Goal, Profile, Prospect, Reference, ScoreRule, SentMessage, Sequence, SequenceRun, SequenceStep, Stage, Tag, Template } from "../types";
 import { normalizeSteps } from "../sequence";
 import type { Repo } from "./types";
 
@@ -216,6 +216,56 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
     async deleteRun(id) {
       const { error } = await sb.from("sequence_runs").delete().eq("id", id);
       fail(error);
+    },
+
+    async importProspects(origin, mapping, rows, skipped, authorId) {
+      const batch = await sb.from("import_batches").insert({ origin, column_mapping: mapping, created_count: rows.length, skipped_count: skipped }).select("id").single();
+      fail(batch.error);
+      const batchId = (batch.data as { id: string }).id;
+      const prospects: Prospect[] = [];
+      try {
+        for (let i = 0; i < rows.length; i += 200) {
+          // Identifiants fixés ici : les étiquettes se rattachent sans dépendre de l'ordre des lignes renvoyées.
+          const chunk = rows.slice(i, i + 200).map((r) => ({ ...r, id: crypto.randomUUID() }));
+          const { data, error } = await sb.from("prospects")
+            .insert(chunk.map((r) => ({ id: r.id, owner_id: authorId, ...r.input, created_by: authorId, import_batch_id: batchId })))
+            .select("*, prospect_tags(tag_id)");
+          fail(error);
+          const tagRows = chunk.flatMap((r) => r.tag_ids.map((tag_id) => ({ prospect_id: r.id, tag_id })));
+          if (tagRows.length) { const t = await sb.from("prospect_tags").insert(tagRows); fail(t.error); }
+          const byId = new Map(chunk.map((r) => [r.id, r.tag_ids]));
+          prospects.push(...(data as Row[]).map(toProspect).map((p) => ({ ...p, tag_ids: byId.get(p.id) ?? [] })));
+        }
+      } catch (e) {
+        // Import interrompu : on retire ce qui a déjà été créé pour ne pas laisser un lot à moitié.
+        await sb.from("prospects").update({ archived_at: new Date().toISOString() }).eq("import_batch_id", batchId);
+        await sb.from("import_batches").update({ undone_at: new Date().toISOString() }).eq("id", batchId);
+        throw e;
+      }
+      return { batch_id: batchId, prospects };
+    },
+
+    async undoImport(batchId) {
+      const at = new Date().toISOString();
+      const { data, error } = await sb.from("prospects").update({ archived_at: at }).eq("import_batch_id", batchId).is("archived_at", null).select("id");
+      fail(error);
+      const done = await sb.from("import_batches").update({ undone_at: at }).eq("id", batchId);
+      fail(done.error);
+      return (data as { id: string }[]).map((r) => r.id);
+    },
+
+    async listScoreRules() {
+      const { data, error } = await sb.from("score_rules").select("key, label, weight, is_active, params");
+      fail(error);
+      return data as ScoreRule[];
+    },
+
+    async saveScoreRules(rules) {
+      const { data, error } = await sb.from("score_rules").upsert(
+        rules.map((r) => ({ key: r.key, label: r.label, weight: r.weight, is_active: r.is_active, params: r.params })), { onConflict: "key" },
+      ).select("key, label, weight, is_active, params");
+      fail(error);
+      return data as ScoreRule[];
     },
 
     async signOut() { await sb.auth.signOut(); },

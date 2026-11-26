@@ -3,11 +3,12 @@
 Outil de prospection de Wayle Production (vidéaste, Rouen), pensé comme un petit CRM : fiches prospects, pipeline, relances, messages générés avec Claude, offres et devis.
 Interface en français, utilisable sur ordinateur et sur téléphone.
 
-**État : étape (d).**
+**État : étape (e).**
 - (a) Connexion, fiches prospects, liste filtrable, ajout rapide avec détection de doublons, historique, barre de commande (Ctrl/Cmd + K).
 - (b) « Aujourd'hui » (actions du jour, indicateurs, objectif du mois) et pipeline en colonnes (glisser-déposer, clavier, filtres).
 - (c) Générateur de messages : modèles par canal, ton et catégorie, réécriture par Claude (3 variantes), « Copier et marquer comme envoyé » (historique, relance à J+3).
 - (d) Séquences de relance : suites d'étapes configurables (ex. J0 message → J+3 relance → J+7 visite ou appel → J+14 dernier message), programmées automatiquement dans « Aujourd'hui », arrêtées dès que le prospect répond.
+- (e) Import CSV et export Notion (correspondance des colonnes, aperçu, doublons, annulation) et score automatique de 0 à 100 avec critères réglables.
 
 Les écrans Carte, Offres et Statistiques affichent « Pas encore construit » et seront ajoutés étape par étape.
 
@@ -27,6 +28,20 @@ Le mode démonstration charge 15 prospects fictifs de Rouen et garde vos modific
 - **Suivre** : la prochaine étape apparaît dans « Aujourd'hui » (« séquence 2/4 ») avec un bouton *Écrire* qui ouvre le générateur avec le bon canal et le bon modèle. *Fait* ou l'envoi d'un message passe à l'étape suivante (annulable). *Pas de réponse* repousse la même étape de 3 jours.
 - **Arrêt automatique** : le prospect passe à partir de « Répondu », une réponse est notée dans l'historique, ou « Ne pas contacter » est coché. Arrêt manuel possible depuis la fiche.
 - Une étape n'est jamais programmée dans le passé (au plus tôt demain). Envoyer un message libre pendant une étape « visite ou appel » ne fait pas avancer la séquence.
+
+## Importer des prospects
+
+Prospects → **Importer**.
+- **Fichier CSV** (séparateur `;`, `,` ou tabulation ; accents Excel lus) ou **export Notion** (dans Notion : ••• de la base → Exporter → Format CSV ; l'archive `.zip` se dépose telle quelle).
+- Les colonnes sont reconnues d'après leurs titres (français ou anglais) : nom, catégorie, Instagram, téléphone, e-mail, site, adresse, contact, date d'ouverture, notes, activité Instagram, indépendant, étiquettes. Chacune se corrige avant l'import.
+- Les valeurs illisibles (e-mail invalide, date incompréhensible…) sont laissées vides et listées. Une catégorie ou une étiquette inconnue n'est pas créée : elle est ignorée (catégorie par défaut au choix).
+- **Doublons** : même Instagram, même téléphone ou nom proche, contre la base *et* entre lignes du fichier. Ils sont ignorés par défaut ; une case permet d'en importer un quand même.
+- L'import est un lot : « Annuler » dans la notification (8 s, ou Ctrl/Cmd + Z) archive toutes les fiches du lot. Les fiches importées ont la source « Import CSV » ou « Import Notion ».
+- Limites : 8 Mo, 5 000 lignes par fichier.
+
+## Score des prospects
+
+Chaque fiche a un score de 0 à 100, recalculé automatiquement à chaque modification de la fiche (survol de « Score » : détail critère par critère). Critères de départ, réglables dans Paramètres → Score des prospects (activer, poids ; le total est ramené à 100) : ouverture récente (N mois réglable), Instagram faible ou inactif, établissement indépendant, catégorie prioritaire, joignable directement. Enregistrer les critères recalcule toutes les fiches.
 
 ## Raccourcis
 

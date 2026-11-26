@@ -1,11 +1,11 @@
-import type { Activity, Goal, Prospect, SentMessage, Sequence, SequenceRun, Template } from "../types";
+import type { Activity, Goal, Prospect, ScoreRule, SentMessage, Sequence, SequenceRun, Template } from "../types";
 import type { Repo } from "./types";
 import { DEMO_ACTIVITIES, DEMO_REFERENCE, activityDate, demoProspects } from "./demo-data";
 import { starterTemplates } from "../message";
 import { normalizeSteps } from "../sequence";
 
 const KEY = "wayle-prospection-demo-v1";
-interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[]; sequences?: Sequence[]; runs?: SequenceRun[] }
+interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[]; sequences?: Sequence[]; runs?: SequenceRun[]; scoreRules?: ScoreRule[]; batches?: Record<string, string[]> }
 
 const uid = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
@@ -131,6 +131,34 @@ export function createDemoRepo(): Repo {
       return structuredClone(run);
     },
     async deleteRun(id) { const s = load(); s.runs = (s.runs ?? []).filter((x) => x.id !== id); save(); },
+    async importProspects(origin, mapping, rows, skipped, authorId) {
+      void origin; void mapping; void skipped;
+      const s = load();
+      const now = new Date().toISOString();
+      const batchId = uid();
+      const prospects = rows.map((r): Prospect => ({
+        category_id: null, owner_id: authorId, heat: "cold", preferred_channel: null, address: null, district: null, lat: null, lng: null,
+        website: null, instagram: null, tiktok: null, linkedin: null, email: null, phone: null, contact_first_name: null,
+        contact_last_name: null, opened_on: null, source: null, score: 0, est_amount_cents: null, highlights: null, ig_activity: null,
+        is_independent: true, next_action_label: null, next_action_at: null, do_not_contact: false, lost_reason: null, archived_at: null,
+        ...r.input, id: uid(), created_at: now, updated_at: now, tag_ids: [...r.tag_ids],
+      }));
+      s.prospects.unshift(...prospects);
+      (s.batches ??= {})[batchId] = prospects.map((p) => p.id);
+      save();
+      return { batch_id: batchId, prospects: structuredClone(prospects) };
+    },
+    async undoImport(batchId) {
+      const s = load();
+      const ids = s.batches?.[batchId] ?? [];
+      const at = new Date().toISOString();
+      const done: string[] = [];
+      for (const p of s.prospects) if (ids.includes(p.id) && !p.archived_at) { p.archived_at = at; done.push(p.id); }
+      save();
+      return done;
+    },
+    async listScoreRules() { return structuredClone(load().scoreRules ?? []); },
+    async saveScoreRules(rules) { load().scoreRules = structuredClone(rules); save(); return structuredClone(rules); },
     async signOut() { /* pas de compte en démonstration */ },
   };
 }

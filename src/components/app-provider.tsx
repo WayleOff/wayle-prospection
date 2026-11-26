@@ -4,7 +4,8 @@ import { getRepo } from "@/lib/repo";
 import { addDays, today as todayStr } from "@/lib/labels";
 import { isMessageAction, planAfter, planStart, progressOf, stageStopsSequence, stepByNo } from "@/lib/sequence";
 import { RELANCE_DAYS } from "@/lib/message";
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
+import { DEFAULT_SCORE_RULES, SCORE_FIELDS, computeScore, mergeRules } from "@/lib/score";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
 
 export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void }
 
@@ -46,6 +47,12 @@ interface AppCtx {
   /** L'étape en cours est faite : programme la suivante (ou termine). Renvoie l'annulation. */
   completeStep: (prospectId: string) => Promise<(() => Promise<void>) | null>;
   stopSequence: (prospectId: string, status?: RunStatus) => Promise<void>;
+  /** Importe les lignes retenues d'un fichier ; le score est calculé ici. Renvoie le nombre de fiches créées (null si échec). Annulable depuis la notification. */
+  importProspects: (origin: "csv" | "notion", mapping: Record<string, string>, rows: { input: ProspectInput; tag_ids: string[] }[], skipped: number) => Promise<number | null>;
+  /** Critères du score (règles enregistrées + règles de départ). */
+  scoreRules: ScoreRule[];
+  /** Enregistre les critères puis recalcule le score de toutes les fiches ; renvoie le nombre de scores modifiés. */
+  saveScoreRules: (rules: ScoreRule[]) => Promise<number | null>;
   signOut: () => Promise<void>;
   toasts: Toast[];
   toast: (message: string, opts?: { undo?: Toast["undo"]; kind?: Toast["kind"] }) => void;
@@ -68,6 +75,9 @@ export function useApp(): AppCtx {
 // eslint-disable-next-line @next/next/no-location-assign-relative-destination
 const toLogin = () => { window.location.href = "/login"; };
 
+/** Valeurs par défaut des champs qui comptent pour le score, pour une fiche en cours de création. */
+const EMPTY_SCORABLE = { opened_on: null, ig_activity: null, instagram: null, is_independent: true, category_id: null, email: null, phone: null };
+
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; ref: Reference };
 
 export function AppProvider({ children, fallback }: { children: ReactNode; fallback: (s: { status: "loading" } | { status: "error"; message: string } | { status: "no-profile"; signOut: () => Promise<void> }) => ReactNode }) {
@@ -85,6 +95,8 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const [sequencesReady, setSequencesReady] = useState(false);
   const sequencesRef = useRef<Sequence[]>([]);
   const runsRef = useRef<SequenceRun[]>([]);
+  const [scoreRules, setScoreRules] = useState<ScoreRule[]>(DEFAULT_SCORE_RULES);
+  const scoreRulesRef = useRef<ScoreRule[]>(DEFAULT_SCORE_RULES);
   const prospectsRef = useRef<Prospect[]>([]);
   useEffect(() => { prospectsRef.current = prospects; }, [prospects]);
 
@@ -141,6 +153,14 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     return () => { alive = false; };
   }, [ready, repo]);
 
+  // Critères du score : si la table est vide ou illisible, les critères de départ s'appliquent.
+  useEffect(() => {
+    if (!ready) return;
+    let alive = true;
+    repo.listScoreRules().then((r) => { if (!alive) return; const m = mergeRules(r); scoreRulesRef.current = m; setScoreRules(m); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [ready, repo]);
+
   const api = useMemo<AppCtx | null>(() => {
     if (!ready) return null;
     const get = (id: string) => prospectsRef.current.find((p) => p.id === id);
@@ -150,9 +170,17 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     const setRunList = (fn: (l: SequenceRun[]) => SequenceRun[]) => { runsRef.current = fn(runsRef.current); setRuns(runsRef.current); };
     const setSeqList = (fn: (l: Sequence[]) => Sequence[]) => { sequencesRef.current = fn(sequencesRef.current); setSequences(sequencesRef.current); };
 
-    const update: AppCtx["update"] = async (id, patch) => {
+    const scoreOf = (p: Prospect) => computeScore(p, scoreRulesRef.current, ready.categories, todayStr()).score;
+
+    const update: AppCtx["update"] = async (id, patchIn) => {
       const before = get(id);
       if (!before) return;
+      // Le score suit la fiche : recalculé quand un champ qui le détermine change.
+      let patch = patchIn;
+      if (!("score" in patch) && SCORE_FIELDS.some((k) => k in patch)) {
+        const s = scoreOf({ ...before, ...patch });
+        if (s !== before.score) patch = { ...patch, score: s };
+      }
       setProspects((l) => l.map((x) => (x.id === id ? { ...x, ...patch } : x))); // affichage immédiat
       try { replace(await repo.updateProspect(id, patch)); }
       catch (e) { replace(before); fail(e, "Enregistrement impossible"); return; }
@@ -239,7 +267,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       activityTick,
       async create(input) {
         try {
-          const p = await repo.createProspect(input, meId);
+          const p = await repo.createProspect({ ...input, score: "score" in input ? input.score : scoreOf({ ...EMPTY_SCORABLE, ...input } as Prospect) }, meId);
           setProspects((l) => [p, ...l]);
           return p;
         } catch (e) { fail(e, "Création impossible"); return null; }
@@ -325,6 +353,38 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         });
         return true;
       },
+      async importProspects(origin, mapping, rows, skipped) {
+        if (rows.length === 0) return 0;
+        try {
+          const scored = rows.map((r) => ({ ...r, input: { ...r.input, score: scoreOf({ ...EMPTY_SCORABLE, ...r.input } as Prospect) } }));
+          const { batch_id, prospects: created } = await repo.importProspects(origin, mapping, scored, skipped, meId);
+          setProspects((l) => [...created, ...l]);
+          const ids = new Set(created.map((p) => p.id));
+          toast(`${created.length} prospect${created.length > 1 ? "s" : ""} importé${created.length > 1 ? "s" : ""}`, {
+            undo: async () => {
+              try {
+                const done = await repo.undoImport(batch_id);
+                setProspects((l) => l.filter((p) => !ids.has(p.id)));
+                toast(`Import annulé : ${done.length} fiche${done.length > 1 ? "s" : ""} archivée${done.length > 1 ? "s" : ""}`);
+              } catch (e) { fail(e, "Annulation impossible"); }
+            },
+          });
+          return created.length;
+        } catch (e) { fail(e, "Import impossible"); return null; }
+      },
+      scoreRules,
+      async saveScoreRules(rules) {
+        try {
+          const saved = mergeRules(await repo.saveScoreRules(rules));
+          scoreRulesRef.current = saved; setScoreRules(saved);
+          let changed = 0;
+          const todo = prospectsRef.current.map((p) => ({ p, s: scoreOf(p) })).filter((x) => x.s !== x.p.score);
+          for (let i = 0; i < todo.length; i += 8) {
+            await Promise.all(todo.slice(i, i + 8).map(async ({ p, s }) => { const back = await repo.updateProspect(p.id, { score: s }); replace(back); changed++; }));
+          }
+          return changed;
+        } catch (e) { fail(e, "Critères non enregistrés"); return null; }
+      },
       sequences, runs, sequencesReady,
       runFor(pid) {
         const run = runs.find((r) => r.prospect_id === pid);
@@ -358,7 +418,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       toasts, toast, dismissToast, undoLast,
       quickAddOpen, setQuickAddOpen, paletteOpen, setPaletteOpen,
     };
-  }, [ready, repo, prospects, sequences, runs, sequencesReady, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
+  }, [ready, repo, prospects, scoreRules, sequences, runs, sequencesReady, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
 
   if (state.status === "loading") return <>{fallback({ status: "loading" })}</>;
   if (state.status === "error") return <>{fallback(state)}</>;

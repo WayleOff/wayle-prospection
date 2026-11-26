@@ -1,9 +1,10 @@
 "use client";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Search, SearchX, Users, X } from "lucide-react";
+import { ArrowDown, ArrowUp, FileUp, Plus, Search, SearchX, Users, X } from "lucide-react";
 import { useApp } from "@/components/app-provider";
 import { Button, Dot, Empty, inputCls } from "@/components/ui";
+import { ImportDialog } from "@/components/import-dialog";
 import { DISTRICT_LABEL, HEAT_COLOR, HEAT_LABEL, fmtDue } from "@/lib/labels";
 import { normHandle, normText } from "@/lib/normalize";
 import type { Prospect } from "@/lib/types";
@@ -17,6 +18,7 @@ export default function Page() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
+  const [importOpen, setImportOpen] = useState(false);
   const [q, setQ] = useState("");
   const [f, setF] = useState({ cat: "", stage: "", owner: "", district: "", tag: "" });
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "updated", dir: -1 });
@@ -83,10 +85,14 @@ export default function Page() {
       <div className="mx-auto max-w-5xl">
         <h1 className="text-xl font-semibold">Prospects</h1>
         <div className="mt-6 rounded-2xl border border-dashed border-border">
-          <Empty icon={<Users size={22} />} title="Aucun prospect pour l’instant" text="Ajoutez le premier en collant un nom ou un lien Instagram. Vous pourrez importer vos fichiers existants à une prochaine étape.">
-            <Button variant="primary" onClick={() => setQuickAddOpen(true)}><Plus size={15} aria-hidden /> Nouveau prospect</Button>
+          <Empty icon={<Users size={22} />} title="Aucun prospect pour l’instant" text="Ajoutez le premier en collant un nom ou un lien Instagram, ou importez un fichier CSV ou un export Notion.">
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="primary" onClick={() => setQuickAddOpen(true)}><Plus size={15} aria-hidden /> Nouveau prospect</Button>
+              <Button onClick={() => setImportOpen(true)}><FileUp size={15} aria-hidden /> Importer un fichier</Button>
+            </div>
           </Empty>
         </div>
+        <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       </div>
     );
   }
@@ -96,7 +102,9 @@ export default function Page() {
       <div className="flex items-baseline gap-3">
         <h1 className="text-xl font-semibold">Prospects</h1>
         <span className="text-sm text-muted" aria-live="polite">{rows.length}{active ? ` sur ${prospects.length}` : ""}</span>
+        <Button size="sm" className="ml-auto" onClick={() => setImportOpen(true)}><FileUp size={14} aria-hidden /> Importer</Button>
       </div>
+      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
 
       <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible md:pb-0">
         <div className="relative min-w-44 shrink-0 md:max-w-xs md:flex-1">

@@ -6,6 +6,7 @@ import { useApp } from "./app-provider";
 import { Button, CloseButton, Dialog, Dot, inputCls } from "./ui";
 import { MessageComposer } from "./message-composer";
 import { stepText } from "@/lib/sequence";
+import { computeScore } from "@/lib/score";
 import { ACTIVITY_LABEL, CHANNEL_LABEL, DISTRICT_LABEL, HEAT_COLOR, HEAT_LABEL, IG_LABEL, addDays, fmtDue, fmtEuros, fmtWhen } from "@/lib/labels";
 import { instagramUrl, telHref } from "@/lib/normalize";
 import type { Activity, Channel, District, Heat, IgActivity, Prospect, ProspectPatch } from "@/lib/types";
@@ -108,7 +109,7 @@ function SequenceBlock({ p }: { p: Prospect }) {
 
 function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
   const app = useApp();
-  const { ref, update, setTags, moveStage, archive, addActivity, toast } = app;
+  const { ref, update, setTags, moveStage, archive, addActivity, toast, scoreRules } = app;
   const save = (patch: ProspectPatch) => update(p.id, patch);
   const [relance, setRelance] = useState(false);
   const [compose, setCompose] = useState(false);
@@ -125,6 +126,7 @@ function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
   const tel = telHref(p.phone);
   const due = fmtDue(p.next_action_at);
   const stage = ref.stages.find((s) => s.id === p.stage_id);
+  const scoreTitle = "Pourquoi ce score :\n" + computeScore(p, scoreRules, ref.categories, new Date().toLocaleDateString("sv-SE")).parts.map((x) => `${x.label} : ${x.earned}/${x.weight} (${x.note})`).join("\n");
 
   const planRelance = (days: number) => {
     const before = { next_action_at: p.next_action_at, next_action_label: p.next_action_label };
@@ -146,7 +148,7 @@ function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
             {stage ? <span className="inline-flex items-center gap-1.5"><Dot color={stage.color} /> {stage.name}</span> : null}
             <span className="inline-flex items-center gap-1.5"><Dot color={HEAT_COLOR[p.heat]} /> {HEAT_LABEL[p.heat]}</span>
-            <span title="Calculé automatiquement d’après la fiche">Score {p.score}</span>
+            <span title={scoreTitle}>Score {p.score}</span>
             {due ? <span className={due.late ? "font-medium text-danger" : ""}>{p.next_action_label ?? "Action"} · {due.text}</span> : null}
           </div>
         </div>

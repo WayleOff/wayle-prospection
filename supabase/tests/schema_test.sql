@@ -82,5 +82,23 @@ do $$ begin
 end $$;
 reset role;
 
+-- Étape e : import annulable et critères du score, comme le fait l'application (compte membre)
+select set_config('t.stage', (select id::text from stages order by position limit 1), true);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', true);
+with b as (insert into import_batches (origin, column_mapping, created_count, skipped_count) values ('csv', '{"Nom":"name"}', 2, 1) returning id)
+insert into prospects (id, name, stage_id, score, source, import_batch_id, created_by, owner_id)
+select v.id::uuid, v.name, current_setting('t.stage')::uuid, 42, 'Import CSV', b.id, '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000b1'
+from b, (values ('10000000-0000-0000-0000-000000000001', 'Import Un'), ('10000000-0000-0000-0000-000000000002', 'Import Deux')) v(id, name);
+select pg_temp.assert((select count(*) from prospects where import_batch_id is not null and archived_at is null) = 2, 'import : 2 fiches créées dans le lot');
+update prospects set archived_at = now() where import_batch_id = (select id from import_batches limit 1) and archived_at is null;
+update import_batches set undone_at = now();
+select pg_temp.assert((select count(*) from prospects where import_batch_id is not null and archived_at is null) = 0, 'annulation : lot archivé');
+select pg_temp.assert((select undone_at is not null from import_batches limit 1), 'annulation : lot marqué');
+insert into score_rules (key, label, weight, is_active, params) values ('recent_opening', 'Ouverture récente', 30, true, '{"months": 6}')
+  on conflict (key) do update set weight = excluded.weight, params = excluded.params;
+select pg_temp.assert((select (params->>'months')::int from score_rules where key = 'recent_opening') = 6, 'score_rules : upsert');
+reset role;
+
 rollback;
 \echo TOUS LES TESTS SQL PASSENT

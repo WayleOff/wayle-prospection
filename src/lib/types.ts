@@ -108,3 +108,6 @@ export interface Sequence { id: string; name: string; is_active: boolean; steps:
 export type SequenceInput = Omit<Sequence, "id"> & { id?: string };
 export type RunStatus = "running" | "stopped_reply" | "finished";
 export interface SequenceRun { id: string; prospect_id: string; sequence_id: string; current_step: number; status: RunStatus; started_at: string }
+
+/** Critère du score automatique (table score_rules). `params` : réglages propres au critère (ex. `months`). */
+export interface ScoreRule { key: string; label: string; weight: number; is_active: boolean; params: { months?: number } }
