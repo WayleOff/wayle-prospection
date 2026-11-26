@@ -100,5 +100,21 @@ insert into score_rules (key, label, weight, is_active, params) values ('recent_
 select pg_temp.assert((select (params->>'months')::int from score_rules where key = 'recent_opening') = 6, 'score_rules : upsert');
 reset role;
 
+-- Étape f : devis (comme le fait l'application, compte membre)
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', true);
+insert into offers (name, description, price_cents, is_recurring) values ('Reel d''essai', 'Demi-journée', 9000, false);
+insert into quotes (number, prospect_id, lines, total_cents, status, valid_until, notes)
+  select 'D-2026-001', id, '[{"label":"Reel d''essai","description":"","qty":1,"unit_cents":9000,"recurring":false}]'::jsonb, 9000, 'draft', current_date + 30, 'Note' from prospects limit 1;
+select pg_temp.assert((select valid_until is not null and notes = 'Note' and status = 'draft' from quotes where number = 'D-2026-001'), 'devis : colonnes valid_until / notes');
+do $$ begin
+  begin insert into quotes (number, prospect_id) select 'D-2026-001', id from prospects limit 1; raise exception 'ÉCHEC : numéro de devis en double accepté';
+  exception when unique_violation then null; end;
+end $$;
+update quotes set status = 'accepted' where number = 'D-2026-001';
+insert into settings (key, value) values ('company', '{"siret":"123"}') on conflict (key) do update set value = excluded.value;
+select pg_temp.assert((select value->>'siret' from settings where key = 'company') = '123', 'settings : coordonnées entreprise');
+reset role;
+
 rollback;
 \echo TOUS LES TESTS SQL PASSENT

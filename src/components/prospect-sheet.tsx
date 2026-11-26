@@ -1,10 +1,14 @@
 "use client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Archive, CalendarClock, CheckCheck, ExternalLink, MessageSquareText, Phone, Send, Trash2 } from "lucide-react";
+import { Archive, CalendarClock, CheckCheck, Download, ExternalLink, FilePlus2, MessageSquareText, Phone, Send, Trash2 } from "lucide-react";
 import { useApp } from "./app-provider";
 import { Button, CloseButton, Dialog, Dot, inputCls } from "./ui";
 import { MessageComposer } from "./message-composer";
+import { QuoteDialog } from "./quote-dialog";
+import { downloadQuote } from "./quote-download";
+import { STATUS_LABEL, fmtDateFr, lineFromOffer } from "@/lib/quote";
+import { amountText } from "./quotes-tab";
 import { stepText } from "@/lib/sequence";
 import { computeScore } from "@/lib/score";
 import { ACTIVITY_LABEL, CHANNEL_LABEL, DISTRICT_LABEL, HEAT_COLOR, HEAT_LABEL, IG_LABEL, addDays, fmtDue, fmtEuros, fmtWhen } from "@/lib/labels";
@@ -107,6 +111,38 @@ function SequenceBlock({ p }: { p: Prospect }) {
   );
 }
 
+/** Devis du prospect : liste, PDF, création. */
+function QuoteBlock({ p }: { p: Prospect }) {
+  const { quotes, quotesReady, offers, company, toast } = useApp();
+  const [open, setOpen] = useState(false);
+  if (!quotesReady) return null; // migration de l'étape f pas encore appliquée : la page Offres l'explique
+  const mine = quotes.filter((q) => q.prospect_id === p.id);
+  const first = offers.find((o) => o.is_active && !o.is_recurring) ?? offers.find((o) => o.is_active); // offre d'entrée d'abord
+  return (
+    <section aria-labelledby="s-devis" className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 id="s-devis" className={SECTION}>Devis</h3>
+        <Button size="sm" onClick={() => setOpen(true)}><FilePlus2 size={14} aria-hidden /> Créer un devis</Button>
+      </div>
+      {mine.length === 0 ? <p className="text-sm text-muted">Aucun devis pour ce prospect.</p> : (
+        <ul className="divide-y divide-border rounded-xl border border-border">
+          {mine.map((q) => (
+            <li key={q.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+              <span className="font-medium">{q.number}</span>
+              <span className="text-xs text-muted">{fmtDateFr(q.created_at)}</span>
+              <span className="tabular-nums">{amountText(q)}</span>
+              <span className="rounded-full bg-subtle px-2 py-0.5 text-xs">{STATUS_LABEL[q.status]}</span>
+              <Button size="sm" className="ml-auto" aria-label={`Télécharger le PDF du devis ${q.number}`}
+                onClick={() => { downloadQuote(q, p, company).catch(() => toast("Le PDF n’a pas pu être créé.", { kind: "error" })); }}><Download size={13} aria-hidden /> PDF</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open ? <QuoteDialog value={{ prospect_id: p.id, lines: first ? [lineFromOffer(first)] : [], valid_until: null, notes: null }} onClose={() => setOpen(false)} /> : null}
+    </section>
+  );
+}
+
 function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
   const app = useApp();
   const { ref, update, setTags, moveStage, archive, addActivity, toast, scoreRules } = app;
@@ -205,6 +241,8 @@ function Sheet({ p, onClose }: { p: Prospect; onClose: () => void }) {
             </div>
           </div>
         </section>
+
+        <QuoteBlock p={p} />
 
         {/* Coordonnées */}
         <section aria-labelledby="s-coord" className="space-y-3">

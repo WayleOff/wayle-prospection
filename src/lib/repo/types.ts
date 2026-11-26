@@ -1,4 +1,4 @@
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, SentMessage, Sequence, SequenceInput, ScoreRule, SequenceRun, Template, TemplateInput } from "../types";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, SentMessage, Sequence, SequenceInput, Offer, OfferInput, Quote, ScoreRule, SequenceRun, Template, TemplateInput } from "../types";
 
 /**
  * Accès aux données. Deux implémentations : Supabase (production) et mémoire (mode démonstration,
@@ -40,5 +40,15 @@ export interface Repo {
   /** Critères du score tels qu'enregistrés (peut être vide : on retombe sur les critères de départ). */
   listScoreRules(): Promise<ScoreRule[]>;
   saveScoreRules(rules: ScoreRule[]): Promise<ScoreRule[]>;
+  listOffers(): Promise<Offer[]>;
+  saveOffer(o: OfferInput): Promise<Offer>;
+  deleteOffer(id: string): Promise<void>;
+  listQuotes(): Promise<Quote[]>;
+  /** Le numéro est choisi par l'appelant ; un numéro déjà pris fait échouer l'appel (message « duplicate »). */
+  createQuote(q: Omit<Quote, "id" | "created_at">): Promise<Quote>;
+  updateQuote(id: string, patch: Partial<Pick<Quote, "lines" | "total_cents" | "status" | "valid_until" | "notes">>): Promise<Quote>;
+  deleteQuote(id: string): Promise<void>;
+  getSetting<T>(key: string): Promise<T | null>;
+  setSetting<T>(key: string, value: T): Promise<void>;
   signOut(): Promise<void>;
 }

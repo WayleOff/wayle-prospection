@@ -4,8 +4,9 @@ import { getRepo } from "@/lib/repo";
 import { addDays, today as todayStr } from "@/lib/labels";
 import { isMessageAction, planAfter, planStart, progressOf, stageStopsSequence, stepByNo } from "@/lib/sequence";
 import { RELANCE_DAYS } from "@/lib/message";
+import { fmtMoney, mergeCompany, nextNumber, STATUS_LABEL, totals } from "@/lib/quote";
 import { DEFAULT_SCORE_RULES, SCORE_FIELDS, computeScore, mergeRules } from "@/lib/score";
-import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
+import type { Activity, ActivityKind, Channel, Goal, MessageInput, Prospect, ProspectInput, ProspectPatch, Company, Offer, OfferInput, Quote, QuoteInput, QuoteStatus, Reference, RunStatus, ScoreRule, SentMessage, Sequence, SequenceInput, SequenceRun, SequenceStep, Template, TemplateInput } from "@/lib/types";
 
 export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void }
 
@@ -47,6 +48,20 @@ interface AppCtx {
   /** L'étape en cours est faite : programme la suivante (ou termine). Renvoie l'annulation. */
   completeStep: (prospectId: string) => Promise<(() => Promise<void>) | null>;
   stopSequence: (prospectId: string, status?: RunStatus) => Promise<void>;
+  offers: Offer[];
+  saveOffer: (o: OfferInput) => Promise<Offer | null>;
+  deleteOffer: (id: string) => Promise<boolean>;
+  quotes: Quote[];
+  /** Faux tant que la migration SQL de l'étape f n'a pas été appliquée à la base. */
+  quotesReady: boolean;
+  /** Crée un devis (brouillon) avec le prochain numéro de l'année. */
+  createQuote: (input: QuoteInput) => Promise<Quote | null>;
+  updateQuote: (id: string, input: Pick<QuoteInput, "lines" | "valid_until" | "notes">) => Promise<Quote | null>;
+  /** Change l'état du devis, l'écrit dans l'historique ; « accepté » met à jour le montant de la fiche. */
+  setQuoteStatus: (id: string, status: QuoteStatus) => Promise<void>;
+  deleteQuote: (id: string) => Promise<boolean>;
+  company: Company;
+  saveCompany: (c: Company) => Promise<boolean>;
   /** Importe les lignes retenues d'un fichier ; le score est calculé ici. Renvoie le nombre de fiches créées (null si échec). Annulable depuis la notification. */
   importProspects: (origin: "csv" | "notion", mapping: Record<string, string>, rows: { input: ProspectInput; tag_ids: string[] }[], skipped: number) => Promise<number | null>;
   /** Critères du score (règles enregistrées + règles de départ). */
@@ -97,6 +112,11 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const runsRef = useRef<SequenceRun[]>([]);
   const [scoreRules, setScoreRules] = useState<ScoreRule[]>(DEFAULT_SCORE_RULES);
   const scoreRulesRef = useRef<ScoreRule[]>(DEFAULT_SCORE_RULES);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [quotesReady, setQuotesReady] = useState(false);
+  const quotesRef = useRef<Quote[]>([]);
+  const [company, setCompany] = useState<Company>(mergeCompany(null));
   const prospectsRef = useRef<Prospect[]>([]);
   useEffect(() => { prospectsRef.current = prospects; }, [prospects]);
 
@@ -150,6 +170,16 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     Promise.all([repo.listSequences(), repo.listRuns()])
       .then(([sq, rn]) => { if (!alive) return; sequencesRef.current = sq; runsRef.current = rn; setSequences(sq); setRuns(rn); setSequencesReady(true); })
       .catch(() => { if (alive) setSequencesReady(false); });
+    return () => { alive = false; };
+  }, [ready, repo]);
+
+  // Offres, devis, coordonnées de l'entreprise. Les devis se chargent à part : leurs colonnes viennent de la migration de l'étape f.
+  useEffect(() => {
+    if (!ready) return;
+    let alive = true;
+    repo.listOffers().then((o) => { if (alive) setOffers(o); }).catch(() => undefined);
+    repo.getSetting<Partial<Company>>("company").then((c) => { if (alive) setCompany(mergeCompany(c)); }).catch(() => undefined);
+    repo.listQuotes().then((q) => { if (!alive) return; quotesRef.current = q; setQuotes(q); setQuotesReady(true); }).catch(() => { if (alive) setQuotesReady(false); });
     return () => { alive = false; };
   }, [ready, repo]);
 
@@ -353,6 +383,81 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         });
         return true;
       },
+      offers,
+      async saveOffer(o) {
+        try {
+          const saved = await repo.saveOffer(o);
+          setOffers((l) => (o.id ? l.map((x) => (x.id === saved.id ? saved : x)) : [...l, saved]).sort((a, b) => a.name.localeCompare(b.name, "fr")));
+          return saved;
+        } catch (e) { fail(e, "Offre non enregistrée"); return null; }
+      },
+      async deleteOffer(id) {
+        try { await repo.deleteOffer(id); setOffers((l) => l.filter((x) => x.id !== id)); return true; }
+        catch (e) { fail(e, "Suppression impossible"); return false; }
+      },
+      quotes, quotesReady,
+      async createQuote(input) {
+        const year = new Date().getFullYear();
+        const total = totals(input.lines).amount;
+        try {
+          let created: Quote | null = null;
+          for (let attempt = 0; !created; attempt++) {
+            try {
+              created = await repo.createQuote({ ...input, number: nextNumber(quotesRef.current.map((q) => q.number), year), total_cents: total, status: "draft" });
+            } catch (e) {
+              // Numéro déjà pris (autre onglet, autre appareil) : on relit la liste et on réessaie.
+              if (attempt < 3 && /duplicate|unique/i.test(e instanceof Error ? e.message : "")) { quotesRef.current = await repo.listQuotes(); continue; }
+              throw e;
+            }
+          }
+          quotesRef.current = [created, ...quotesRef.current];
+          setQuotes(quotesRef.current);
+          await addActivity(input.prospect_id, { kind: "note", body: `Devis ${created.number} créé (${fmtMoney(total)})` });
+          return created;
+        } catch (e) { fail(e, "Devis non créé"); return null; }
+      },
+      async updateQuote(id, input) {
+        try {
+          const saved = await repo.updateQuote(id, { ...input, total_cents: totals(input.lines).amount });
+          quotesRef.current = quotesRef.current.map((q) => (q.id === id ? saved : q));
+          setQuotes(quotesRef.current);
+          return saved;
+        } catch (e) { fail(e, "Devis non enregistré"); return null; }
+      },
+      async setQuoteStatus(id, status) {
+        const q = quotesRef.current.find((x) => x.id === id);
+        if (!q || q.status === status) return;
+        const prev = q.status;
+        const p = get(q.prospect_id);
+        const prevAmount = p?.est_amount_cents ?? null;
+        const put = async (st: QuoteStatus) => {
+          const saved = await repo.updateQuote(id, { status: st });
+          quotesRef.current = quotesRef.current.map((x) => (x.id === id ? saved : x));
+          setQuotes(quotesRef.current);
+        };
+        try { await put(status); } catch (e) { fail(e, "Statut non enregistré"); return; }
+        if (status !== "draft") await addActivity(q.prospect_id, { kind: "note", body: `Devis ${q.number} ${STATUS_LABEL[status].toLowerCase()}${status === "accepted" ? ` (${fmtMoney(q.total_cents)})` : ""}` });
+        if (status === "accepted" && p) await update(p.id, { est_amount_cents: q.total_cents });
+        toast(status === "accepted" ? `Devis ${q.number} accepté, montant de la fiche mis à jour` : `Devis ${q.number} : ${STATUS_LABEL[status].toLowerCase()}`, {
+          undo: async () => {
+            try { await put(prev); } catch (e) { fail(e, "Annulation impossible"); return; }
+            if (status === "accepted" && p) await update(p.id, { est_amount_cents: prevAmount });
+          },
+        });
+      },
+      async deleteQuote(id) {
+        try {
+          await repo.deleteQuote(id);
+          quotesRef.current = quotesRef.current.filter((q) => q.id !== id);
+          setQuotes(quotesRef.current);
+          return true;
+        } catch (e) { fail(e, "Suppression impossible"); return false; }
+      },
+      company,
+      async saveCompany(c) {
+        try { await repo.setSetting("company", c); setCompany(c); return true; }
+        catch (e) { fail(e, "Coordonnées non enregistrées"); return false; }
+      },
       async importProspects(origin, mapping, rows, skipped) {
         if (rows.length === 0) return 0;
         try {
@@ -418,7 +523,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       toasts, toast, dismissToast, undoLast,
       quickAddOpen, setQuickAddOpen, paletteOpen, setPaletteOpen,
     };
-  }, [ready, repo, prospects, scoreRules, sequences, runs, sequencesReady, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
+  }, [ready, repo, prospects, scoreRules, offers, quotes, quotesReady, company, sequences, runs, sequencesReady, activityTick, toasts, toast, dismissToast, undoLast, meId, fail, replace, quickAddOpen, paletteOpen]);
 
   if (state.status === "loading") return <>{fallback({ status: "loading" })}</>;
   if (state.status === "error") return <>{fallback(state)}</>;

@@ -1,11 +1,11 @@
-import type { Activity, Goal, Prospect, ScoreRule, SentMessage, Sequence, SequenceRun, Template } from "../types";
+import type { Activity, Goal, Offer, Prospect, Quote, ScoreRule, SentMessage, Sequence, SequenceRun, Template } from "../types";
 import type { Repo } from "./types";
 import { DEMO_ACTIVITIES, DEMO_REFERENCE, activityDate, demoProspects } from "./demo-data";
 import { starterTemplates } from "../message";
 import { normalizeSteps } from "../sequence";
 
 const KEY = "wayle-prospection-demo-v1";
-interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[]; sequences?: Sequence[]; runs?: SequenceRun[]; scoreRules?: ScoreRule[]; batches?: Record<string, string[]> }
+interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[]; templates?: Template[]; messages?: SentMessage[]; sequences?: Sequence[]; runs?: SequenceRun[]; scoreRules?: ScoreRule[]; batches?: Record<string, string[]>; offers?: Offer[]; quotes?: Quote[]; settings?: Record<string, unknown> }
 
 const uid = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
@@ -159,6 +159,30 @@ export function createDemoRepo(): Repo {
     },
     async listScoreRules() { return structuredClone(load().scoreRules ?? []); },
     async saveScoreRules(rules) { load().scoreRules = structuredClone(rules); save(); return structuredClone(rules); },
+    async listOffers() { return structuredClone(load().offers ?? []).sort((a, b) => a.name.localeCompare(b.name, "fr")); },
+    async saveOffer(o) {
+      const s = load(); const list = (s.offers ??= []);
+      const row: Offer = { id: o.id ?? uid(), name: o.name, description: o.description, price_cents: o.price_cents, is_recurring: o.is_recurring, is_active: o.is_active };
+      const i = list.findIndex((x) => x.id === row.id);
+      if (i >= 0) list[i] = row; else list.push(row);
+      save(); return structuredClone(row);
+    },
+    async deleteOffer(id) { const s = load(); s.offers = (s.offers ?? []).filter((o) => o.id !== id); save(); },
+    async listQuotes() { return structuredClone(load().quotes ?? []).sort((a, b) => b.created_at.localeCompare(a.created_at)); },
+    async createQuote(q) {
+      const s = load(); const list = (s.quotes ??= []);
+      if (list.some((x) => x.number === q.number)) throw new Error('duplicate key value violates unique constraint "quotes_number_key"');
+      const row: Quote = { ...q, id: uid(), created_at: new Date().toISOString() };
+      list.push(row); save(); return structuredClone(row);
+    },
+    async updateQuote(id, patch) {
+      const row = (load().quotes ?? []).find((x) => x.id === id);
+      if (!row) throw new Error("Devis introuvable");
+      Object.assign(row, patch); save(); return structuredClone(row);
+    },
+    async deleteQuote(id) { const s = load(); s.quotes = (s.quotes ?? []).filter((q) => q.id !== id); save(); },
+    async getSetting<T>(key: string) { return (structuredClone(load().settings?.[key]) ?? null) as T | null; },
+    async setSetting(key, value) { const s = load(); (s.settings ??= {})[key] = structuredClone(value); save(); },
     async signOut() { /* pas de compte en démonstration */ },
   };
 }

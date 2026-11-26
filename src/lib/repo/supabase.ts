@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Activity, Category, Goal, Profile, Prospect, Reference, ScoreRule, SentMessage, Sequence, SequenceRun, SequenceStep, Stage, Tag, Template } from "../types";
+import type { Activity, Category, Goal, Profile, Prospect, Offer, Quote, Reference, ScoreRule, SentMessage, Sequence, SequenceRun, SequenceStep, Stage, Tag, Template } from "../types";
 import { normalizeSteps } from "../sequence";
 import type { Repo } from "./types";
 
@@ -13,6 +13,8 @@ const toSequence = (r: SeqRow): Sequence => ({
   id: r.id, name: r.name, is_active: r.is_active,
   steps: [...(r.sequence_steps ?? [])].sort((a, b) => a.step_no - b.step_no).map((s) => ({ ...s, label: s.label ?? "" })),
 });
+const QUOTE_COLS = "id, number, prospect_id, lines, total_cents, status, created_at, valid_until, notes";
+const OFFER_COLS = "id, name, description, price_cents, is_recurring, is_active";
 const PAGE = 1000; // limite de lignes par requête de l'API Supabase
 
 /** Colonnes techniques de la base qui n'existent pas côté application. */
@@ -266,6 +268,59 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
       ).select("key, label, weight, is_active, params");
       fail(error);
       return data as ScoreRule[];
+    },
+
+    async listOffers() {
+      const { data, error } = await sb.from("offers").select(OFFER_COLS).order("name");
+      fail(error);
+      return data as Offer[];
+    },
+
+    async saveOffer(o) {
+      const row = { name: o.name, description: o.description, price_cents: o.price_cents, is_recurring: o.is_recurring, is_active: o.is_active };
+      const q = o.id ? sb.from("offers").update(row).eq("id", o.id) : sb.from("offers").insert(row);
+      const { data, error } = await q.select(OFFER_COLS).single();
+      fail(error);
+      return data as Offer;
+    },
+
+    async deleteOffer(id) {
+      const { error } = await sb.from("offers").delete().eq("id", id);
+      fail(error);
+    },
+
+    async listQuotes() {
+      const { data, error } = await sb.from("quotes").select(QUOTE_COLS).order("created_at", { ascending: false }).limit(2000);
+      fail(error);
+      return data as Quote[];
+    },
+
+    async createQuote(q) {
+      const { data, error } = await sb.from("quotes").insert(q).select(QUOTE_COLS).single();
+      fail(error);
+      return data as Quote;
+    },
+
+    async updateQuote(id, patch) {
+      const { data, error } = await sb.from("quotes").update(patch).eq("id", id).select(QUOTE_COLS).single();
+      fail(error);
+      return data as Quote;
+    },
+
+    async deleteQuote(id) {
+      const { error } = await sb.from("quotes").delete().eq("id", id);
+      fail(error);
+    },
+
+    async getSetting<T>(key: string) {
+      const { data, error } = await sb.from("settings").select("value").eq("key", key).maybeSingle();
+      fail(error);
+      return ((data as { value: T } | null)?.value ?? null) as T | null;
+    },
+
+    async setSetting(key, value) {
+      const { error } = await sb.from("settings").upsert({ key, value }, { onConflict: "key" });
+      fail(error);
     },
 
     async signOut() { await sb.auth.signOut(); },

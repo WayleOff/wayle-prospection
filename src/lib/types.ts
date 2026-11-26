@@ -111,3 +111,30 @@ export interface SequenceRun { id: string; prospect_id: string; sequence_id: str
 
 /** Critère du score automatique (table score_rules). `params` : réglages propres au critère (ex. `months`). */
 export interface ScoreRule { key: string; label: string; weight: number; is_active: boolean; params: { months?: number } }
+
+/** Offre du catalogue (prix en centimes). `is_recurring` : abonnement mensuel. */
+export interface Offer { id: string; name: string; description: string | null; price_cents: number; is_recurring: boolean; is_active: boolean }
+export type OfferInput = Omit<Offer, "id"> & { id?: string };
+
+export type QuoteStatus = "draft" | "sent" | "accepted" | "refused";
+/** Ligne de devis : quantité (peut être décimale), prix unitaire en centimes (négatif = remise), `recurring` = facturé chaque mois. */
+export interface QuoteLine { label: string; description: string; qty: number; unit_cents: number; recurring: boolean }
+export interface Quote {
+  id: string;
+  number: string; // D-AAAA-NNN
+  prospect_id: string;
+  lines: QuoteLine[];
+  /** Montant retenu : prestations ponctuelles + un mois des lignes mensuelles. */
+  total_cents: number;
+  status: QuoteStatus;
+  created_at: string;
+  valid_until: string | null; // AAAA-MM-JJ
+  notes: string | null;
+}
+export type QuoteInput = { prospect_id: string; lines: QuoteLine[]; valid_until: string | null; notes: string | null };
+
+/** Coordonnées de l'entreprise et mentions du devis (table settings, clé « company »). */
+export interface Company {
+  name: string; owner: string; address: string; zip_city: string; siret: string; phone: string; email: string;
+  vat_mention: string; validity_days: number; payment_terms: string;
+}

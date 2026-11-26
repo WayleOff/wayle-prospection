@@ -3,12 +3,13 @@
 Outil de prospection de Wayle Production (vidéaste, Rouen), pensé comme un petit CRM : fiches prospects, pipeline, relances, messages générés avec Claude, offres et devis.
 Interface en français, utilisable sur ordinateur et sur téléphone.
 
-**État : étape (e).**
+**État : étape (f).**
 - (a) Connexion, fiches prospects, liste filtrable, ajout rapide avec détection de doublons, historique, barre de commande (Ctrl/Cmd + K).
 - (b) « Aujourd'hui » (actions du jour, indicateurs, objectif du mois) et pipeline en colonnes (glisser-déposer, clavier, filtres).
 - (c) Générateur de messages : modèles par canal, ton et catégorie, réécriture par Claude (3 variantes), « Copier et marquer comme envoyé » (historique, relance à J+3).
 - (d) Séquences de relance : suites d'étapes configurables (ex. J0 message → J+3 relance → J+7 visite ou appel → J+14 dernier message), programmées automatiquement dans « Aujourd'hui », arrêtées dès que le prospect répond.
 - (e) Import CSV et export Notion (correspondance des colonnes, aperçu, doublons, annulation) et score automatique de 0 à 100 avec critères réglables.
+- (f) Offres (catalogue) et devis : numérotation D-AAAA-NNN, lignes ponctuelles ou mensuelles, PDF A4, états brouillon / envoyé / accepté / refusé.
 
 Les écrans Carte, Offres et Statistiques affichent « Pas encore construit » et seront ajoutés étape par étape.
 
@@ -39,6 +40,15 @@ Prospects → **Importer**.
 - L'import est un lot : « Annuler » dans la notification (8 s, ou Ctrl/Cmd + Z) archive toutes les fiches du lot. Les fiches importées ont la source « Import CSV » ou « Import Notion ».
 - Limites : 8 Mo, 5 000 lignes par fichier.
 
+## Offres et devis
+
+- **Offres** (Offres → onglet Offres) : le catalogue (nom, description, prix, mensuel ou non). L'offre de départ est le reel d'essai à 90 €.
+- **Mon entreprise** (Paramètres) : nom, adresse, SIRET, téléphone, e-mail, mention de TVA, durée de validité, conditions de paiement. Tout est imprimé sur le PDF. L'adresse et le SIRET sont obligatoires sur un devis ; la mention de TVA par défaut est celle de la franchise en base (art. 293 B du CGI) : à faire valider par un comptable.
+- **Créer un devis** : depuis la fiche d'un prospect (section Devis) ou depuis Offres → Devis → Nouveau devis. On ajoute des offres du catalogue ou des lignes libres (quantité, prix unitaire, case « facturé chaque mois » ; un prix négatif sert de remise), une date de validité et des remarques. Le numéro est attribué à l'enregistrement.
+- **PDF** : généré dans le navigateur (rien n'est envoyé), bouton PDF sur la fiche et dans la liste des devis.
+- **États** : un brouillon se modifie ; un devis envoyé, accepté ou refusé se duplique. Chaque changement d'état est noté dans l'historique du prospect et se défait avec « Annuler ». **Accepté** met à jour le montant de la fiche (prestations ponctuelles + un mois des lignes mensuelles), donc le « CA signé » d'Aujourd'hui une fois le prospect passé à « Gagné ».
+- Limite : l'outil ne gère pas les factures.
+
 ## Score des prospects
 
 Chaque fiche a un score de 0 à 100, recalculé automatiquement à chaque modification de la fiche (survol de « Score » : détail critère par critère). Critères de départ, réglables dans Paramètres → Score des prospects (activer, poids ; le total est ramené à 100) : ouverture récente (N mois réglable), Instagram faible ou inactif, établissement indépendant, catégorie prioritaire, joignable directement. Enregistrer les critères recalcule toutes les fiches.
@@ -57,7 +67,7 @@ Chaque fiche a un score de 0 à 100, recalculé automatiquement à chaque modifi
 
 ## Mise en service (vraies données)
 
-1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, `supabase/migrations/20261127000000_sequences.sql` (séquences, à exécuter aussi sur un projet existant), puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
+1. **Supabase** — créer un projet (région UE), puis exécuter dans l'éditeur SQL, dans cet ordre : `supabase/migrations/20261126000000_schema.sql`, `supabase/migrations/20261127000000_sequences.sql` (séquences) et `supabase/migrations/20261128000000_quotes.sql` (devis) — ces deux dernières sont à exécuter aussi sur un projet existant —, puis `supabase/seed.sql` si vous voulez les 15 prospects fictifs (à supprimer ensuite, ils portent l'étiquette « démo »).
 2. **Invitations** — dans l'éditeur SQL, *avant* d'inviter quiconque :
    `insert into team_invites (email) values ('vous@exemple.fr');` (en minuscules). Seules les adresses listées obtiennent un profil ; le prénom affiché est tiré de l'adresse et modifiable dans la table `profiles`.
    Puis, pour chaque personne, créer son compte dans Authentication → Users → *Add user* → *Create new user* (cocher *Auto Confirm User*, mot de passe aléatoire jamais utilisé). Le lien de connexion ne crée jamais de compte : sans cette étape, l'adresse est refusée (« n'est pas invitée »).
