@@ -23,7 +23,9 @@ function Form() {
       setState("error");
       setMessage(/signups? not allowed|not found/i.test(error.message)
         ? "Cette adresse n’est pas invitée. Demandez à Jonas de l’ajouter à l’équipe."
-        : "L’envoi a échoué. Vérifiez l’adresse et réessayez dans une minute.");
+        : /rate limit|too many|seconds/i.test(error.message)
+        ? `Trop de demandes de lien en peu de temps. Patientez quelques minutes avant de réessayer. (${error.message})`
+        : `L’envoi a échoué : ${error.message}`);
     } else setState("sent");
   };
 
@@ -49,7 +51,7 @@ function Form() {
   }
   return (
     <form onSubmit={submit} className="space-y-3">
-      {sp.get("erreur") === "lien" ? <p role="alert" className="rounded-lg border border-danger/40 p-3 text-sm text-danger">Ce lien n’est plus valable. Demandez-en un nouveau ci-dessous.</p> : null}
+      {sp.get("erreur") === "lien" ? <p role="alert" className="rounded-lg border border-danger/40 p-3 text-sm text-danger">Ce lien n’est plus valable. Demandez-en un nouveau ci-dessous.{sp.get("detail") ? <span className="mt-1 block text-xs opacity-80">Détail : {sp.get("detail")}</span> : null}</p> : null}
       <label htmlFor="email" className="block text-sm font-medium">Adresse e-mail</label>
       <input id="email" type="email" required autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder="vous@exemple.fr" />
       {state === "error" ? <p role="alert" className="text-sm text-danger">{message}</p> : null}
