@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { findDuplicates } from "./duplicates";
 import { normHandle, normPhone, normText, trigramSimilarity } from "./normalize";
 import { parseQuickInput } from "./quick-input";
-import { demoProspects } from "./repo/demo-data";
+import { DEMO_REFERENCE, demoProspects } from "./repo/demo-data";
+import { computeIndicators, monthKey, progress, stageChangeTarget, weekStart } from "./stats";
+import { buildToday } from "./today";
+import type { Activity, Prospect } from "./types";
 
 describe("normalisation (mêmes résultats que le SQL)", () => {
   it("texte", () => expect(normText("  Café « Sous les Toits » !")).toBe("cafe sous les toits"));
@@ -76,5 +79,71 @@ describe("jeu de démonstration", () => {
     const demo = demoProspects().map((p) => p.name);
     expect(names.length).toBeGreaterThanOrEqual(15);
     expect([...names].sort()).toEqual([...demo].sort());
+  });
+});
+
+describe("aujourd'hui et indicateurs", () => {
+  const stages = DEMO_REFERENCE.stages;
+  const st = (re: RegExp) => stages.find((s) => re.test(s.name))!;
+  const mk = (name: string, stage: RegExp, extra: Partial<Prospect> = {}): Prospect => ({
+    ...demoProspects()[0], id: name, name, stage_id: st(stage).id, next_action_at: null, next_action_label: null, archived_at: null,
+    do_not_contact: false, score: 50, est_amount_cents: null, tag_ids: [], ...extra,
+  });
+  const now = new Date("2026-11-26T12:00:00");
+  const act = (prospect_id: string, kind: Activity["kind"], body: string | null, d: string): Activity =>
+    ({ id: prospect_id + kind + d, prospect_id, kind, channel: null, body, author_id: null, created_at: new Date(d).toISOString() });
+
+  it("liste du jour : retard, aujourd'hui, à venir, exclusions", () => {
+    const l = buildToday([
+      mk("retard", /Contacté/, { next_action_at: "2026-11-24" }),
+      mk("jour", /Répondu/, { next_action_at: "2026-11-26" }),
+      mk("demain", /RDV/, { next_action_at: "2026-11-27" }),
+      mk("loin", /RDV/, { next_action_at: "2026-12-20" }),
+      mk("gagne", /Gagné/, { next_action_at: "2026-11-26" }),
+      mk("archive", /Contacté/, { next_action_at: "2026-11-24", archived_at: "2026-11-01" }),
+      mk("stop", /Contacté/, { next_action_at: "2026-11-24", do_not_contact: true }),
+      mk("a1", /À contacter/, { score: 80 }), mk("a2", /À contacter/, { score: 90 }), mk("a3", /À contacter/, { next_action_at: "2026-11-30" }),
+    ], stages, "2026-11-26", "2026-12-03");
+    expect(l.late.map((p) => p.name)).toEqual(["retard"]);
+    expect(l.today.map((p) => p.name)).toEqual(["jour"]);
+    expect(l.upcoming.map((p) => p.name)).toEqual(["demain", "a3"]);
+    expect(l.firstContacts.map((p) => p.name)).toEqual(["a2", "a1"]);
+  });
+
+  it("cible d'un changement d'étape", () => {
+    expect(stageChangeTarget("Contacté → Répondu")).toBe("Répondu");
+    expect(stageChangeTarget("Répondu → Contacté (annulé)")).toBeNull();
+    expect(stageChangeTarget("note libre")).toBeNull();
+  });
+
+  it("indicateurs", () => {
+    const ps = [mk("A", /RDV/), mk("B", /Reel/), mk("C", /Gagné/, { est_amount_cents: 150000 }), mk("D", /Perdu/), mk("E", /Contacté/)];
+    const ac = [
+      act("A", "message", null, "2026-11-25T10:00:00"), act("A", "reply", null, "2026-11-25T15:00:00"),
+      act("E", "message", null, "2026-11-10T10:00:00"), act("B", "call", null, "2026-11-02T10:00:00"),
+      act("A", "stage_change", "Répondu → RDV / Tournage prévu", "2026-11-25T16:00:00"),
+      act("B", "stage_change", "RDV / Tournage prévu → Reel livré", "2026-11-20T16:00:00"),
+      act("C", "stage_change", "Reel livré → Gagné", "2026-11-21T16:00:00"),
+      act("D", "stage_change", "Reel livré → Gagné", "2026-11-21T17:00:00"),   // depuis perdu : ne compte pas
+      act("E", "stage_change", "Répondu → RDV / Tournage prévu", "2026-11-22T17:00:00"), // revenu en arrière : ne compte pas
+    ];
+    const i = computeIndicators(ps, ac, stages, now);
+    expect(i.contactsWeek).toBe(1);               // lundi 23 → seulement le message du 25
+    expect(i.contactsMonth).toBe(3);
+    expect(i.contacted30).toBe(3);
+    expect(i.replied30).toBe(1);
+    expect(i.replyRate).toBeCloseTo(1 / 3);
+    expect(i.rdvMonth).toBe(3);                    // A, B (au-delà), C (au-delà) ; E est revenu avant
+    expect(i.reelsMonth).toBe(2);                  // B, C
+    expect(i.wonMonth).toBe(1);
+    expect(i.revenueCents).toBe(150000);
+  });
+
+  it("avancement vers l'objectif", () => {
+    expect(progress(500, 1000)).toBe(0.5);
+    expect(progress(2000, 1000)).toBe(1);
+    expect(progress(10, 0)).toBeNull();
+    expect(monthKey(new Date("2026-11-26T12:00:00"))).toBe("2026-11-01");
+    expect(weekStart(now).getDate()).toBe(23);
   });
 });

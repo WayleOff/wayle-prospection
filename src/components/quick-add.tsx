@@ -44,7 +44,7 @@ function QuickAddForm() {
     setQuickAddOpen(false);
     const qs = new URLSearchParams(window.location.search);
     qs.set("fiche", id);
-    router.push(`${pathname.startsWith("/prospects") || pathname.startsWith("/pipeline") ? pathname : "/prospects"}?${qs.toString()}`);
+    router.push(`${pathname}?${qs.toString()}`); // la fiche s'ouvre par-dessus la page en cours
   };
 
   const submit = async () => {

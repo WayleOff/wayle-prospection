@@ -91,5 +91,12 @@ export const DEMO_ACTIVITIES: [name: string, kind: Activity["kind"], channel: Ac
   ["Pizzeria Il Faro", "note", null, "Veut un montage plus rythmé pour les stories.", 3],
   ["Café Sous les Toits", "call", "phone", "Appel : rendez-vous fixé pour le tournage.", 4],
   ["Boutique Fil & Aiguille", "message", "instagram", "DM envoyé : compliment sur les ateliers et proposition de reel.", 3],
+  ["Café Sous les Toits", "stage_change", null, "Répondu → RDV / Tournage prévu", 4],
+  ["Pizzeria Il Faro", "stage_change", null, "RDV / Tournage prévu → Reel livré", 1],
+  ["Studio Lumière & Cie", "stage_change", null, "RDV / Tournage prévu → Reel livré", 2],
+  ["Léa Corsaire", "stage_change", null, "Reel livré → Gagné", 1],
+  ["Garage Pop & Roule", "stage_change", null, "Reel livré → Gagné", 2],
+  ["Bar à Vins Les Trois Clés", "message", "instagram", "DM envoyé : proposition de reel d'essai.", 2],
+  ["Studio Yoga Respire", "message", "email", "E-mail envoyé : présentation et exemples de reels.", 1],
 ];
 export const activityDate = ago;

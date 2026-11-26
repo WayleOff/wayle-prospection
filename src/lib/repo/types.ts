@@ -1,4 +1,4 @@
-import type { Activity, ActivityKind, Channel, Prospect, ProspectInput, ProspectPatch, Reference } from "../types";
+import type { Activity, ActivityKind, Channel, Goal, Prospect, ProspectInput, ProspectPatch, Reference } from "../types";
 
 /**
  * Accès aux données. Deux implémentations : Supabase (production) et mémoire (mode démonstration,
@@ -14,5 +14,9 @@ export interface Repo {
   listActivities(prospectId: string): Promise<Activity[]>;
   addActivity(prospectId: string, a: { kind: ActivityKind; channel?: Channel | null; body: string | null }, authorId: string | null): Promise<Activity>;
   deleteActivity(id: string): Promise<void>;
+  /** Toutes les entrées d'historique depuis une date (ISO), pour les indicateurs. */
+  listActivitiesSince(iso: string): Promise<Activity[]>;
+  getGoal(month: string): Promise<Goal | null>;
+  setGoal(goal: Goal): Promise<Goal>;
   signOut(): Promise<void>;
 }

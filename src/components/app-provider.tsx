@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getRepo } from "@/lib/repo";
-import type { Activity, ActivityKind, Channel, Prospect, ProspectInput, ProspectPatch, Reference } from "@/lib/types";
+import type { Activity, ActivityKind, Channel, Goal, Prospect, ProspectInput, ProspectPatch, Reference } from "@/lib/types";
 
 export interface Toast { id: number; message: string; kind: "info" | "error"; undo?: () => Promise<void> | void }
 
@@ -21,6 +21,9 @@ interface AppCtx {
   addActivity: (id: string, a: { kind: ActivityKind; channel?: Channel | null; body: string | null }) => Promise<Activity | null>;
   listActivities: (id: string) => Promise<Activity[]>;
   deleteActivity: (id: string) => Promise<void>;
+  listActivitiesSince: (iso: string) => Promise<Activity[]>;
+  getGoal: (month: string) => Promise<Goal | null>;
+  setGoal: (goal: Goal) => Promise<Goal | null>;
   signOut: () => Promise<void>;
   toasts: Toast[];
   toast: (message: string, opts?: { undo?: Toast["undo"]; kind?: Toast["kind"] }) => void;
@@ -162,6 +165,9 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       addActivity,
       listActivities: (id) => repo.listActivities(id),
       async deleteActivity(id) { try { await repo.deleteActivity(id); setActivityTick((n) => n + 1); } catch (e) { fail(e, "Suppression impossible"); } },
+      listActivitiesSince: (iso) => repo.listActivitiesSince(iso),
+      getGoal: (month) => repo.getGoal(month),
+      async setGoal(goal) { try { return await repo.setGoal(goal); } catch (e) { fail(e, "Objectif non enregistré"); return null; } },
       signOut: async () => { await repo.signOut(); toLogin(); },
       toasts, toast, dismissToast, undoLast,
       quickAddOpen, setQuickAddOpen, paletteOpen, setPaletteOpen,

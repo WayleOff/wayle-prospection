@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Activity, Category, Profile, Prospect, Reference, Stage, Tag } from "../types";
+import type { Activity, Category, Goal, Profile, Prospect, Reference, Stage, Tag } from "../types";
 import type { Repo } from "./types";
 
 type Row = Record<string, unknown> & { id: string; prospect_tags?: { tag_id: string }[] };
@@ -98,6 +98,25 @@ export function createSupabaseRepo(sb: SupabaseClient): Repo {
     async deleteActivity(id) {
       const { error } = await sb.from("activities").delete().eq("id", id);
       fail(error);
+    },
+
+    async listActivitiesSince(iso) {
+      const { data, error } = await sb.from("activities").select("id, prospect_id, kind, channel, body, author_id, created_at")
+        .gte("created_at", iso).order("created_at", { ascending: false }).limit(5000);
+      fail(error);
+      return data as Activity[];
+    },
+
+    async getGoal(month) {
+      const { data, error } = await sb.from("goals").select("month, revenue_cents, contacts").eq("month", month).maybeSingle();
+      fail(error);
+      return (data as Goal | null) ?? null;
+    },
+
+    async setGoal(goal) {
+      const { data, error } = await sb.from("goals").upsert(goal, { onConflict: "month" }).select("month, revenue_cents, contacts").single();
+      fail(error);
+      return data as Goal;
     },
 
     async signOut() { await sb.auth.signOut(); },

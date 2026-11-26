@@ -69,3 +69,6 @@ export interface Reference {
   profiles: Profile[];
   me: Profile | null; // null = connecté mais pas invité
 }
+
+/** Objectif d'un mois (month = premier jour du mois, AAAA-MM-01). Montants en centimes. */
+export interface Goal { month: string; revenue_cents: number; contacts: number }

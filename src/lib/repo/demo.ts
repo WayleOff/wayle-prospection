@@ -1,9 +1,9 @@
-import type { Activity, Prospect } from "../types";
+import type { Activity, Goal, Prospect } from "../types";
 import type { Repo } from "./types";
 import { DEMO_ACTIVITIES, DEMO_REFERENCE, activityDate, demoProspects } from "./demo-data";
 
 const KEY = "wayle-prospection-demo-v1";
-interface Store { prospects: Prospect[]; activities: Activity[] }
+interface Store { prospects: Prospect[]; activities: Activity[]; goals?: Goal[] }
 
 const uid = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
@@ -65,6 +65,15 @@ export function createDemoRepo(): Repo {
     },
     async deleteActivity(id) {
       const s = load(); s.activities = s.activities.filter((a) => a.id !== id); save();
+    },
+    async listActivitiesSince(iso) {
+      return structuredClone(load().activities.filter((a) => a.created_at >= iso));
+    },
+    async getGoal(month) { return structuredClone(load().goals?.find((g) => g.month === month) ?? null); },
+    async setGoal(goal) {
+      const s = load();
+      s.goals = [...(s.goals ?? []).filter((g) => g.month !== goal.month), goal]; save();
+      return structuredClone(goal);
     },
     async signOut() { /* pas de compte en démonstration */ },
   };
