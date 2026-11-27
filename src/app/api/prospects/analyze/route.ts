@@ -1,17 +1,14 @@
-import { IS_DEMO } from "@/lib/env";
 import { AiError } from "@/lib/ai/generate";
 import { analyzeProspect, parseAnalysisInput } from "@/lib/ai/analyze";
 import { fetchSiteInfo } from "@/lib/ai/site-text";
-import { supabaseServer } from "@/lib/supabase/server";
+import { requireMember } from "@/lib/supabase/member";
 
 export const maxDuration = 60;
 
 /** Description d'activité + SWOT de la communication vidéo, rédigés par Claude. Réservé aux comptes connectés ; la clé reste côté serveur. */
 export async function POST(request: Request) {
-  if (!IS_DEMO) {
-    const { data } = await (await supabaseServer()).auth.getUser();
-    if (!data.user) return Response.json({ error: "Non connecté." }, { status: 401 });
-  }
+  const denied = await requireMember();
+  if (denied) return denied;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return Response.json({ error: "no_key", message: "La clé Claude n'est pas configurée (ANTHROPIC_API_KEY)." }, { status: 503 });
 
